@@ -83,3 +83,5 @@ src/memfile_test
 src/json_test
 src/message_test
 src/kword_test
+
+files.proj
