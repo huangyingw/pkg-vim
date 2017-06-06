@@ -97,6 +97,7 @@ EXTERN int	cmdline_row;
 EXTERN int	redraw_cmdline INIT(= FALSE);	/* cmdline must be redrawn */
 EXTERN int	clear_cmdline INIT(= FALSE);	/* cmdline must be cleared */
 EXTERN int	mode_displayed INIT(= FALSE);	/* mode is being displayed */
+EXTERN int	no_win_do_lines_ins INIT(= FALSE); /* don't insert lines */
 #if defined(FEAT_CRYPT) || defined(FEAT_EVAL)
 EXTERN int	cmdline_star INIT(= FALSE);	/* cmdline is crypted */
 #endif
@@ -532,7 +533,6 @@ EXTERN int	clip_autoselect_plus INIT(= FALSE);
 EXTERN int	clip_autoselectml INIT(= FALSE);
 EXTERN int	clip_html INIT(= FALSE);
 EXTERN regprog_T *clip_exclude_prog INIT(= NULL);
-EXTERN int	clip_did_set_selection INIT(= TRUE);
 EXTERN int	clip_unnamed_saved INIT(= 0);
 #endif
 
@@ -932,10 +932,10 @@ EXTERN int	State INIT(= NORMAL);	/* This is the current state of the
 					 * command interpreter. */
 
 EXTERN int	finish_op INIT(= FALSE);/* TRUE while an operator is pending */
-EXTERN int	opcount INIT(= 0);	/* count for pending operator */
+EXTERN long	opcount INIT(= 0);	/* count for pending operator */
 
 /*
- * ex mode (Q) state
+ * Ex mode (Q) state
  */
 EXTERN int exmode_active INIT(= 0);	/* zero, EXMODE_NORMAL or EXMODE_VIM */
 EXTERN int ex_no_reprint INIT(= FALSE); /* no need to print after z or p */
@@ -1088,7 +1088,7 @@ EXTERN pos_T	last_cursormoved	      /* for CursorMoved event */
 			= INIT_POS_T(0, 0, 0)
 # endif
 			;
-EXTERN int	last_changedtick INIT(= 0);   /* for TextChanged event */
+EXTERN varnumber_T last_changedtick INIT(= 0);   /* for TextChanged event */
 EXTERN buf_T	*last_changedtick_buf INIT(= NULL);
 #endif
 
@@ -1648,7 +1648,9 @@ EXTERN int  alloc_fail_countdown INIT(= -1);
 /* set by alloc_fail(), number of times alloc() returns NULL */
 EXTERN int  alloc_fail_repeat INIT(= 0);
 
+/* flags set by test_override() */
 EXTERN int  disable_char_avail_for_testing INIT(= 0);
+EXTERN int  disable_redraw_for_testing INIT(= 0);
 
 EXTERN int  in_free_unref_items INIT(= FALSE);
 #endif

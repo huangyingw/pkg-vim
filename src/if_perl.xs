@@ -1136,9 +1136,7 @@ perl_to_vim(SV *sv, typval_T *rettv)
 		}
 	    }
 
-	    list->lv_refcount++;
-	    rettv->v_type	= VAR_LIST;
-	    rettv->vval.v_list	= list;
+	    rettv_list_set(rettv, list);
 	    break;
 	}
 	case SVt_PVHV:	/* dictionary */
@@ -1192,9 +1190,7 @@ perl_to_vim(SV *sv, typval_T *rettv)
 		}
 	    }
 
-	    dict->dv_refcount++;
-	    rettv->v_type	= VAR_DICT;
-	    rettv->vval.v_dict	= dict;
+	    rettv_dict_set(rettv, dict);
 	    break;
 	}
 	default:	/* not convertible */
@@ -1288,7 +1284,7 @@ ex_perldo(exarg_T *eap)
     linenr_T	i;
     buf_T	*was_curbuf = curbuf;
 
-    if (bufempty())
+    if (BUFEMPTY())
 	return;
 
     if (perl_interp == NULL)
