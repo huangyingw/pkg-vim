@@ -57,3 +57,5 @@ src/testdir/small.vim
 src/testdir/tiny.vim 
 src/testdir/test*.out
 src/testdir/test.log
+
+files.proj
