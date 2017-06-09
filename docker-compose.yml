@@ -1,10 +1,15 @@
 version: '2.1'
 services:
     dbuntu:
-        extends:
-            file: ~/Dropbox/myproject/git/docker/dbuntu/docker-compose.yml
-            service: dbuntu
+        build:
+            context: .
+            dockerfile: Dockerfile
+        image: huangyingw/dbuntu
         volumes:
-            - ./:/pkg-vim/
+            - ~/.m2/:/root/.m2/
+            - ~/loadrc/:/root/loadrc/
+            - ~/loadrc/gitrc/.gitconfig:/root/.gitconfig
+            - ./.bashrc:/root/.bashrc
             - ./var/logs/:/var/logs/
+            - ./:/pkg-vim/
         command: /bin/sh -c "/pkg-vim/build.sh > /var/logs/containner.log 2>&1"
