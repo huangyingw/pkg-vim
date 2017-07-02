@@ -6,6 +6,52 @@ func Test_help_tagjump()
   call assert_true(getline('.') =~ '\*help.txt\*')
   helpclose
 
+  help |
+  call assert_equal("help", &filetype)
+  call assert_true(getline('.') =~ '\*bar\*')
+  helpclose
+
+  help "*
+  call assert_equal("help", &filetype)
+  call assert_true(getline('.') =~ '\*quotestar\*')
+  helpclose
+
+  help sm?le
+  call assert_equal("help", &filetype)
+  call assert_true(getline('.') =~ '\*:smile\*')
+  helpclose
+
+  help :?
+  call assert_equal("help", &filetype)
+  call assert_true(getline('.') =~ '\*:?\*')
+  helpclose
+
+  help FileW*Post
+  call assert_equal("help", &filetype)
+  call assert_true(getline('.') =~ '\*FileWritePost\*')
+  helpclose
+
+  help `ls`
+  call assert_equal("help", &filetype)
+  call assert_true(getline('.') =~ '\*:ls\*')
+  helpclose
+
+  help ^X
+  call assert_equal("help", &filetype)
+  call assert_true(getline('.') =~ '\*CTRL-X\*')
+  helpclose
+
+  help i_^_CTRL-D
+  call assert_equal("help", &filetype)
+  call assert_true(getline('.') =~ '\*i_^_CTRL-D\*')
+  helpclose
+
+  exec "help \<C-V>"
+  call assert_equal("help", &filetype)
+  call assert_true(getline('.') =~ '\*CTRL-V\*')
+  helpclose
+
+
   exec "help! ('textwidth'"
   call assert_equal("help", &filetype)
   call assert_true(getline('.') =~ "\\*'textwidth'\\*")
@@ -34,6 +80,16 @@ func Test_help_tagjump()
   exec "help! {address}."
   call assert_equal("help", &filetype)
   call assert_true(getline('.') =~ '\*{address}\*')
+  helpclose
+
+  exusage
+  call assert_equal("help", &filetype)
+  call assert_true(getline('.') =~ '\*:index\*')
+  helpclose
+
+  viusage
+  call assert_equal("help", &filetype)
+  call assert_true(getline('.') =~ '\*normal-index\*')
   helpclose
 endfunc
 
@@ -133,6 +189,38 @@ func Test_help_complete()
       call assert_equal(sort(['test-col', 'test-col@ja',
             \             'test-col@en', 'test-char',
             \             'test-char@ja', 'test-char@en']), sort(list))
+    endif
+  catch
+    call assert_exception('X')
+  finally
+    call s:doc_config_teardown()
+  endtry
+endfunc
+
+func Test_help_respect_current_file_lang()
+  try
+    let list = []
+    call s:doc_config_setup()
+
+    if has('multi_lang')
+      function s:check_help_file_ext(help_keyword, ext)
+        exec 'help ' . a:help_keyword
+        call assert_equal(a:ext, expand('%:e'))
+        call feedkeys("\<C-]>", 'tx')
+        call assert_equal(a:ext, expand('%:e'))
+        pop
+        helpclose
+      endfunc
+
+      set rtp+=Xdir1/doc-ab
+      set rtp+=Xdir1/doc-ja
+
+      set helplang=ab
+      call s:check_help_file_ext('test-char', 'abx')
+      call s:check_help_file_ext('test-char@ja', 'jax')
+      set helplang=ab,ja
+      call s:check_help_file_ext('test-char@ja', 'jax')
+      call s:check_help_file_ext('test-char@en', 'txt')
     endif
   catch
     call assert_exception('X')
