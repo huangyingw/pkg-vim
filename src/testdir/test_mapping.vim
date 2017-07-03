@@ -110,8 +110,6 @@ func Test_map_langmap()
   call feedkeys(":call append(line('$'), '+')\<CR>", "xt")
   call assert_equal('+', getline('$'))
 
-  iunmap a
-  iunmap c
   set nomodified
 endfunc
 
@@ -122,7 +120,7 @@ func Test_map_feedkeys()
   $-1
   call feedkeys("0qqdw.ifoo\<Esc>qj0@q\<Esc>", "xt")
   call assert_equal(['fooc d', 'fooc d'], getline(line('$') - 1, line('$')))
-  nunmap .
+  unmap .
   set nomodified
 endfunc
 
@@ -159,15 +157,4 @@ func Test_map_meta_quotes()
   call assert_equal("-foo-", getline('$'))
   set nomodified
   iunmap <M-">
-endfunc
-
-func Test_abbr_after_line_join()
-  new
-  abbr foo bar
-  set backspace=indent,eol,start
-  exe "normal o\<BS>foo "
-  call assert_equal("bar ", getline(1))
-  bwipe!
-  unabbr foo
-  set backspace&
 endfunc

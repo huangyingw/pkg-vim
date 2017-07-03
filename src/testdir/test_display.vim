@@ -3,12 +3,18 @@ if !has('gui_running') && has('unix')
   set term=ansi
 endif
 
-source view_util.vim
+function! s:screenline(lnum, nr) abort
+  let line = []
+  for j in range(a:nr)
+    for c in range(1, winwidth(0))
+        call add(line, nr2char(screenchar(a:lnum+j, c)))
+    endfor
+    call add(line, "\n")
+  endfor
+  return join(line, '')
+endfunction
 
-func! Test_display_foldcolumn()
-  if !has("folding")
-    return
-  endif
+function! Test_display_foldcolumn()
   new
   vnew
   vert resize 25
@@ -17,53 +23,17 @@ func! Test_display_foldcolumn()
 
   1put='e more noise blah blah more stuff here'
 
-  let expect = [
-        \ "e more noise blah blah<82",
-        \ "> more stuff here        "
-        \ ]
+  let expect = "e more noise blah blah<82\n> more stuff here        \n"
 
   call cursor(2, 1)
   norm! zt
-  let lines=ScreenLines([1,2], winwidth(0))
-  call assert_equal(expect, lines)
+  redraw!
+  call assert_equal(expect, s:screenline(1,2))
   set fdc=2
-  let lines=ScreenLines([1,2], winwidth(0))
-  let expect = [
-        \ "  e more noise blah blah<",
-        \ "  82> more stuff here    "
-        \ ]
-  call assert_equal(expect, lines)
+  redraw!
+  let expect = "  e more noise blah blah<\n  82> more stuff here    \n"
+  call assert_equal(expect, s:screenline(1,2))
 
   quit!
   quit!
-endfunc
-
-func! Test_display_foldtext_mbyte()
-  if !has("folding") || !has("multi_byte")
-    return
-  endif
-  call NewWindow(10, 40)
-  call append(0, range(1,20))
-  exe "set foldmethod=manual foldtext=foldtext() fillchars=fold:\u2500,vert:\u2502 fdc=2"
-  call cursor(2, 1)
-  norm! zf13G
-  let lines=ScreenLines([1,3], winwidth(0)+1)
-  let expect=[
-        \ "  1                                     \u2502",
-        \ "+ +-- 12 lines: 2". repeat("\u2500", 23). "\u2502",
-        \ "  14                                    \u2502",
-        \ ]
-  call assert_equal(expect, lines)
-
-  set fillchars=fold:-,vert:\|
-  let lines=ScreenLines([1,3], winwidth(0)+1)
-  let expect=[
-        \ "  1                                     |",
-        \ "+ +-- 12 lines: 2". repeat("-", 23). "|",
-        \ "  14                                    |",
-        \ ]
-  call assert_equal(expect, lines)
-
-  set foldtext& fillchars& foldmethod& fdc&
-  bw!
-endfunc
+endfunction

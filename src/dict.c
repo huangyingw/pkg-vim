@@ -88,7 +88,8 @@ dict_free_contents(dict_T *d)
 	     * something recursive causing trouble. */
 	    di = HI2DI(hi);
 	    hash_remove(&d->dv_hashtab, hi);
-	    dictitem_free(di);
+	    clear_tv(&di->di_tv);
+	    vim_free(di);
 	    --todo;
 	}
     }
@@ -356,12 +357,12 @@ dict_add_list(dict_T *d, char *key, list_T *list)
     item->di_tv.v_lock = 0;
     item->di_tv.v_type = VAR_LIST;
     item->di_tv.vval.v_list = list;
-    ++list->lv_refcount;
     if (dict_add(d, item) == FAIL)
     {
 	dictitem_free(item);
 	return FAIL;
     }
+    ++list->lv_refcount;
     return OK;
 }
 
@@ -380,12 +381,12 @@ dict_add_dict(dict_T *d, char *key, dict_T *dict)
     item->di_tv.v_lock = 0;
     item->di_tv.v_type = VAR_DICT;
     item->di_tv.vval.v_dict = dict;
-    ++dict->dv_refcount;
     if (dict_add(d, item) == FAIL)
     {
 	dictitem_free(item);
 	return FAIL;
     }
+    ++dict->dv_refcount;
     return OK;
 }
 

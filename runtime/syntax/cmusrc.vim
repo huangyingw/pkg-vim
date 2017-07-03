@@ -1,6 +1,6 @@
 " Vim syntax file
-" Previous Maintainer:  Nikolai Weibull <now@bitwi.se>
-" Latest Revision:      2007-06-17
+" Maintainer:       Nikolai Weibull <now@bitwi.se>
+" Latest Revision:  2007-06-17
 
 if exists("b:current_syntax")
   finish

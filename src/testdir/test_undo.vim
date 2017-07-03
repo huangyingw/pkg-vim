@@ -3,7 +3,6 @@
 " undo-able pieces.  Do that by setting 'undolevels'.
 " Also tests :earlier and :later.
 
-set belloff=all
 func Test_undotree()
   exe "normal Aabc\<Esc>"
   set ul=100
@@ -177,17 +176,7 @@ func Test_undojoin()
   call assert_equal(['aaaa', 'bbbb', 'cccc'], getline(2, '$'))
   call feedkeys("u", 'xt')
   call assert_equal(['aaaa'], getline(2, '$'))
-  bwipe!
-endfunc
-
-func Test_undojoin_redo()
-  new
-  call setline(1, ['first line', 'second line'])
-  call feedkeys("ixx\<Esc>", 'xt')
-  call feedkeys(":undojoin | redo\<CR>", 'xt')
-  call assert_equal('xxfirst line', getline(1))
-  call assert_equal('second line', getline(2))
-  bwipe!
+  close!
 endfunc
 
 func Test_undo_write()

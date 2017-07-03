@@ -274,9 +274,9 @@ readfile(
     int		msg_save = msg_scroll;
     linenr_T	read_no_eol_lnum = 0;   /* non-zero lnum when last line of
 					 * last read was missing the eol */
-    int		try_mac;
-    int		try_dos;
-    int		try_unix;
+    int		try_mac = (vim_strchr(p_ffs, 'm') != NULL);
+    int		try_dos = (vim_strchr(p_ffs, 'd') != NULL);
+    int		try_unix = (vim_strchr(p_ffs, 'x') != NULL);
     int		file_rewind = FALSE;
 #ifdef FEAT_MBYTE
     int		can_retry;
@@ -738,10 +738,6 @@ readfile(
     curbuf->b_op_start.lnum = ((from == 0) ? 1 : from);
     curbuf->b_op_start.col = 0;
 
-    try_mac = (vim_strchr(p_ffs, 'm') != NULL);
-    try_dos = (vim_strchr(p_ffs, 'd') != NULL);
-    try_unix = (vim_strchr(p_ffs, 'x') != NULL);
-
 #ifdef FEAT_AUTOCMD
     if (!read_buffer)
     {
@@ -773,11 +769,6 @@ readfile(
 	else
 	    apply_autocmds_exarg(EVENT_FILEREADPRE, sfname, sfname,
 							    FALSE, NULL, eap);
-	/* autocommands may have changed it */
-	try_mac = (vim_strchr(p_ffs, 'm') != NULL);
-	try_dos = (vim_strchr(p_ffs, 'd') != NULL);
-	try_unix = (vim_strchr(p_ffs, 'x') != NULL);
-
 	if (msg_scrolled == n)
 	    msg_scroll = m;
 
@@ -2251,9 +2242,8 @@ rewind_retry:
 			len = (colnr_T)(ptr - line_start + 1);
 			if (fileformat == EOL_DOS)
 			{
-			    if (ptr > line_start && ptr[-1] == CAR)
+			    if (ptr[-1] == CAR)	/* remove CR */
 			    {
-				/* remove CR before NL */
 				ptr[-1] = NUL;
 				--len;
 			    }
@@ -4924,11 +4914,11 @@ restore_backup:
     {
 	unchanged(buf, TRUE);
 #ifdef FEAT_AUTOCMD
-	/* b:changedtick is always incremented in unchanged() but that
+	/* buf->b_changedtick is always incremented in unchanged() but that
 	 * should not trigger a TextChanged event. */
-	if (last_changedtick + 1 == CHANGEDTICK(buf)
+	if (last_changedtick + 1 == buf->b_changedtick
 					       && last_changedtick_buf == buf)
-	    last_changedtick = CHANGEDTICK(buf);
+	    last_changedtick = buf->b_changedtick;
 #endif
 	u_unchanged(buf);
 	u_update_save_nr(buf);
@@ -5044,7 +5034,7 @@ nofail:
     {
 	int numlen = errnum != NULL ? (int)STRLEN(errnum) : 0;
 
-	attr = HL_ATTR(HLF_E);	/* set highlight for error messages */
+	attr = hl_attr(HLF_E);	/* set highlight for error messages */
 	msg_add_fname(buf,
 #ifndef UNIX
 		sfname
@@ -5300,7 +5290,7 @@ check_mtime(buf_T *buf, stat_T *st)
 	msg_silent = 0;		    /* must give this prompt */
 	/* don't use emsg() here, don't want to flush the buffers */
 	MSG_ATTR(_("WARNING: The file has been changed since reading it!!!"),
-						       HL_ATTR(HLF_E));
+						       hl_attr(HLF_E));
 	if (ask_yesno((char_u *)_("Do you really want to write to it"),
 								 TRUE) == 'n')
 	    return FAIL;
@@ -6247,7 +6237,7 @@ buf_modname(
      * Then truncate what is after the '/', '\' or ':' to 8 characters for
      * MSDOS and 26 characters for AMIGA, a lot more for UNIX.
      */
-    for (ptr = retval + fnamelen; ptr > retval; MB_PTR_BACK(retval, ptr))
+    for (ptr = retval + fnamelen; ptr > retval; mb_ptr_back(retval, ptr))
     {
 	if (*ext == '.'
 #ifdef USE_LONG_FNAME
@@ -7011,10 +7001,10 @@ buf_check_timestamp(
 # endif
 		{
 		    msg_start();
-		    msg_puts_attr(tbuf, HL_ATTR(HLF_E) + MSG_HIST);
+		    msg_puts_attr(tbuf, hl_attr(HLF_E) + MSG_HIST);
 		    if (*mesg2 != NUL)
 			msg_puts_attr((char_u *)mesg2,
-						   HL_ATTR(HLF_W) + MSG_HIST);
+						   hl_attr(HLF_W) + MSG_HIST);
 		    msg_clr_eos();
 		    (void)msg_end();
 		    if (emsg_silent == 0)
@@ -7118,7 +7108,7 @@ buf_reload(buf_T *buf, int orig_mode)
 	 * the old contents.  Can't use memory only, the file might be
 	 * too big.  Use a hidden buffer to move the buffer contents to.
 	 */
-	if (BUFEMPTY() || saved == FAIL)
+	if (bufempty() || saved == FAIL)
 	    savebuf = NULL;
 	else
 	{
@@ -7161,7 +7151,7 @@ buf_reload(buf_T *buf, int orig_mode)
 		{
 		    /* Put the text back from the save buffer.  First
 		     * delete any lines that readfile() added. */
-		    while (!BUFEMPTY())
+		    while (!bufempty())
 			if (ml_delete(buf->b_ml.ml_line_count, FALSE) == FAIL)
 			    break;
 		    (void)move_lines(savebuf, buf);
@@ -7840,12 +7830,12 @@ show_autocmd(AutoPat *ap, event_T event)
 	if (ap->group != AUGROUP_DEFAULT)
 	{
 	    if (AUGROUP_NAME(ap->group) == NULL)
-		msg_puts_attr(get_deleted_augroup(), HL_ATTR(HLF_E));
+		msg_puts_attr(get_deleted_augroup(), hl_attr(HLF_E));
 	    else
-		msg_puts_attr(AUGROUP_NAME(ap->group), HL_ATTR(HLF_T));
+		msg_puts_attr(AUGROUP_NAME(ap->group), hl_attr(HLF_T));
 	    msg_puts((char_u *)"  ");
 	}
-	msg_puts_attr(event_nr2name(event), HL_ATTR(HLF_T));
+	msg_puts_attr(event_nr2name(event), hl_attr(HLF_T));
 	last_event = event;
 	last_group = ap->group;
 	msg_putchar('\n');
@@ -8163,7 +8153,7 @@ event_name2nr(char_u *start, char_u **end)
     int		len;
 
     /* the event name ends with end of line, '|', a blank or a comma */
-    for (p = start; *p && !VIM_ISWHITE(*p) && *p != ',' && *p != '|'; ++p)
+    for (p = start; *p && !vim_iswhite(*p) && *p != ',' && *p != '|'; ++p)
 	;
     for (i = 0; event_names[i].name != NULL; ++i)
     {
@@ -8206,7 +8196,7 @@ find_end_event(
 
     if (*arg == '*')
     {
-	if (arg[1] && !VIM_ISWHITE(arg[1]))
+	if (arg[1] && !vim_iswhite(arg[1]))
 	{
 	    EMSG2(_("E215: Illegal character after *: %s"), arg);
 	    return NULL;
@@ -8215,7 +8205,7 @@ find_end_event(
     }
     else
     {
-	for (pat = arg; *pat && *pat != '|' && !VIM_ISWHITE(*pat); pat = p)
+	for (pat = arg; *pat && *pat != '|' && !vim_iswhite(*pat); pat = p)
 	{
 	    if ((int)event_name2nr(pat, &p) >= (int)NUM_EVENTS)
 	    {
@@ -8394,7 +8384,7 @@ do_autocmd(char_u *arg_in, int forceit)
 	 * Scan over the pattern.  Put a NUL at the end.
 	 */
 	cmd = pat;
-	while (*cmd && (!VIM_ISWHITE(*cmd) || cmd[-1] == '\\'))
+	while (*cmd && (!vim_iswhite(*cmd) || cmd[-1] == '\\'))
 	    cmd++;
 	if (*cmd)
 	    *cmd++ = NUL;
@@ -8420,7 +8410,7 @@ do_autocmd(char_u *arg_in, int forceit)
 	 * Check for "nested" flag.
 	 */
 	cmd = skipwhite(cmd);
-	if (*cmd != NUL && STRNCMP(cmd, "nested", 6) == 0 && VIM_ISWHITE(cmd[6]))
+	if (*cmd != NUL && STRNCMP(cmd, "nested", 6) == 0 && vim_iswhite(cmd[6]))
 	{
 	    nested = TRUE;
 	    cmd = skipwhite(cmd + 6);
@@ -8463,7 +8453,7 @@ do_autocmd(char_u *arg_in, int forceit)
     }
     else
     {
-	while (*arg && *arg != '|' && !VIM_ISWHITE(*arg))
+	while (*arg && *arg != '|' && !vim_iswhite(*arg))
 	    if (do_autocmd_event(event_name2nr(arg, &arg), pat,
 					nested,	cmd, forceit, group) == FAIL)
 		break;
@@ -8488,7 +8478,7 @@ au_get_grouparg(char_u **argp)
     char_u	*arg = *argp;
     int		group = AUGROUP_ALL;
 
-    for (p = arg; *p && !VIM_ISWHITE(*p) && *p != '|'; ++p)
+    for (p = arg; *p && !vim_iswhite(*p) && *p != '|'; ++p)
 	;
     if (p > arg)
     {
@@ -8800,7 +8790,7 @@ do_doautocmd(
     /*
      * Loop over the events.
      */
-    while (*arg && !VIM_ISWHITE(*arg))
+    while (*arg && !vim_iswhite(*arg))
 	if (apply_autocmds_group(event_name2nr(arg, &arg),
 				      fname, NULL, TRUE, group, curbuf, NULL))
 	    nothing_done = FALSE;
@@ -9033,11 +9023,6 @@ win_found:
 	win_remove(curwin, NULL);
 	aucmd_win_used = FALSE;
 	last_status(FALSE);	    /* may need to remove last status line */
-
-	if (!valid_tabpage_win(curtab))
-	    /* no valid window in current tabpage */
-	    close_tabpage(curtab);
-
 	restore_snapshot(SNAP_AUCMD_IDX, FALSE);
 	(void)win_comp_pos();   /* recompute window positions */
 	unblock_autocmds();
@@ -9316,7 +9301,6 @@ apply_autocmds_group(
     proftime_T	wait_time;
 #endif
     int		did_save_redobuff = FALSE;
-    save_redo_T	save_redo;
 
     /*
      * Quickly return if there are no autocommands for this event or
@@ -9522,7 +9506,7 @@ apply_autocmds_group(
 	if (!ins_compl_active())
 #endif
 	{
-	    saveRedobuff(&save_redo);
+	    saveRedobuff();
 	    did_save_redobuff = TRUE;
 	}
 	did_filetype = keep_filetype;
@@ -9625,7 +9609,7 @@ apply_autocmds_group(
     {
 	restore_search_patterns();
 	if (did_save_redobuff)
-	    restoreRedobuff(&save_redo);
+	    restoreRedobuff();
 	did_filetype = FALSE;
 	while (au_pending_free_buf != NULL)
 	{
@@ -9922,14 +9906,14 @@ set_context_in_autocmd(
     if (group == AUGROUP_ERROR)
 	return NULL;
     /* If there only is a group name that's what we expand. */
-    if (*arg == NUL && group != AUGROUP_ALL && !VIM_ISWHITE(arg[-1]))
+    if (*arg == NUL && group != AUGROUP_ALL && !vim_iswhite(arg[-1]))
     {
 	arg = p;
 	group = AUGROUP_ALL;
     }
 
     /* skip over event name */
-    for (p = arg; *p != NUL && !VIM_ISWHITE(*p); ++p)
+    for (p = arg; *p != NUL && !vim_iswhite(*p); ++p)
 	if (*p == ',')
 	    arg = p + 1;
     if (*p == NUL)
@@ -9943,7 +9927,7 @@ set_context_in_autocmd(
 
     /* skip over pattern */
     arg = skipwhite(p);
-    while (*arg && (!VIM_ISWHITE(*arg) || arg[-1] == '\\'))
+    while (*arg && (!vim_iswhite(*arg) || arg[-1] == '\\'))
 	arg++;
     if (*arg)
 	return arg;			    /* expand (next) command */

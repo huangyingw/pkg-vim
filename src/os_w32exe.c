@@ -38,12 +38,13 @@ void _cdecl SaveInst(HINSTANCE hInst);
 static void (_cdecl *pSaveInst)(HINSTANCE);
 #endif
 
+/*ARGSUSED*/
     int WINAPI
 WinMain(
-    HINSTANCE	hInstance UNUSED,
-    HINSTANCE	hPrevInst UNUSED,
+    HINSTANCE	hInstance,
+    HINSTANCE	hPrevInst,
     LPSTR	lpszCmdLine,
-    int		nCmdShow UNUSED)
+    int		nCmdShow)
 {
     int		argc = 0;
     char	**argv;

@@ -1584,16 +1584,14 @@ EXTRA_SRC = hangulin.c if_lua.c if_mzsch.c auto/if_perl.c if_perlsfio.c \
 # Unittest files
 JSON_TEST_SRC = json_test.c
 JSON_TEST_TARGET = json_test$(EXEEXT)
-KWORD_TEST_SRC = kword_test.c
-KWORD_TEST_TARGET = kword_test$(EXEEXT)
 MEMFILE_TEST_SRC = memfile_test.c
 MEMFILE_TEST_TARGET = memfile_test$(EXEEXT)
 MESSAGE_TEST_SRC = message_test.c
 MESSAGE_TEST_TARGET = message_test$(EXEEXT)
 
-UNITTEST_SRC = $(JSON_TEST_SRC) $(KWORD_TEST_SRC) $(MEMFILE_TEST_SRC) $(MESSAGE_TEST_SRC)
-UNITTEST_TARGETS = $(JSON_TEST_TARGET) $(KWORD_TEST_TARGET) $(MEMFILE_TEST_TARGET) $(MESSAGE_TEST_TARGET)
-RUN_UNITTESTS = run_json_test run_kword_test run_memfile_test run_message_test
+UNITTEST_SRC = $(JSON_TEST_SRC) $(MEMFILE_TEST_SRC) $(MESSAGE_TEST_SRC)
+UNITTEST_TARGETS = $(JSON_TEST_TARGET) $(MEMFILE_TEST_TARGET) $(MESSAGE_TEST_TARGET)
+RUN_UNITTESTS = run_json_test run_memfile_test run_message_test
 
 # All sources, also the ones that are not configured
 ALL_SRC = $(BASIC_SRC) $(ALL_GUI_SRC) $(UNITTEST_SRC) $(EXTRA_SRC)
@@ -1613,6 +1611,7 @@ OBJ_COMMON = \
 	objects/arabic.o \
 	objects/buffer.o \
 	objects/blowfish.o \
+	objects/charset.o \
 	objects/crypt.o \
 	objects/crypt_zip.o \
 	objects/dict.o \
@@ -1680,7 +1679,6 @@ OBJ_COMMON = \
 
 # The files included by tests are not in OBJ_COMMON.
 OBJ_MAIN = \
-	objects/charset.o \
 	objects/json.o \
 	objects/main.o \
 	objects/memfile.o \
@@ -1689,23 +1687,13 @@ OBJ_MAIN = \
 OBJ = $(OBJ_COMMON) $(OBJ_MAIN)
 
 OBJ_JSON_TEST = \
-	objects/charset.o \
 	objects/memfile.o \
 	objects/message.o \
 	objects/json_test.o
 
 JSON_TEST_OBJ = $(OBJ_COMMON) $(OBJ_JSON_TEST)
 
-OBJ_KWORD_TEST = \
-	objects/json.o \
-	objects/memfile.o \
-	objects/message.o \
-	objects/kword_test.o
-
-KWORD_TEST_OBJ = $(OBJ_COMMON) $(OBJ_KWORD_TEST)
-
 OBJ_MEMFILE_TEST = \
-	objects/charset.o \
 	objects/json.o \
 	objects/message.o \
 	objects/memfile_test.o
@@ -1713,7 +1701,6 @@ OBJ_MEMFILE_TEST = \
 MEMFILE_TEST_OBJ = $(OBJ_COMMON) $(OBJ_MEMFILE_TEST)
 
 OBJ_MESSAGE_TEST = \
-	objects/charset.o \
 	objects/json.o \
 	objects/memfile.o \
 	objects/message_test.o
@@ -1723,7 +1710,6 @@ MESSAGE_TEST_OBJ = $(OBJ_COMMON) $(OBJ_MESSAGE_TEST)
 ALL_OBJ = $(OBJ_COMMON) \
 	  $(OBJ_MAIN) \
 	  $(OBJ_JSON_TEST) \
-	  $(OBJ_KWORD_TEST) \
 	  $(OBJ_MEMFILE_TEST) \
 	  $(OBJ_MESSAGE_TEST)
 
@@ -1884,16 +1870,6 @@ autoconf:
 	-rm -rf autom4te.cache
 	-rm -f auto/config.status auto/config.cache
 
-# Run Perl to generate the Ex command lookup table.  This only needs to be run
-# when a command name has been added or changed.
-# NOTE: Only works when perl and vim executables are available
-cmdidxs: ex_cmds.h
-	if test X`perl -e "print 123"` = "X123"; then \
-	   vim ex_docmd.c -c '/Beginning.*create_cmdidxs/,/End.*create_cmdidxs/! perl create_cmdidxs.pl' -c wq; \
-	else \
-	   echo Cannot run Perl; \
-	fi
-
 # Re-execute this Makefile to include the new auto/config.mk produced by
 # configure Only used when typing "make" with a fresh auto/config.mk.
 myself:
@@ -1901,9 +1877,7 @@ myself:
 
 
 # The normal command to compile a .c file to its .o file.
-# Without or with ALL_CFLAGS.
-CCC_NF = $(CC) -c -I$(srcdir)
-CCC = $(CCC_NF) $(ALL_CFLAGS)
+CCC = $(CC) -c -I$(srcdir) $(ALL_CFLAGS)
 
 
 # Link the target for normal use or debugging.
@@ -2043,6 +2017,7 @@ scripttests:
 	fi
 	cd testdir; $(MAKE) -f Makefile $(GUI_TESTTARGET) VIMPROG=../$(VIMTARGET) $(GUI_TESTARG) SCRIPTSOURCE=../$(SCRIPTSOURCE)
 
+
 # Run the tests with the GUI.  Assumes vim/gvim was already built
 testgui:
 	cd testdir; $(MAKE) -f Makefile $(GUI_TESTTARGET) VIMPROG=../$(VIMTARGET) GUI_FLAG=-g $(GUI_TESTARG) SCRIPTSOURCE=../$(SCRIPTSOURCE)
@@ -2058,9 +2033,6 @@ unittest unittests: $(RUN_UNITTESTS)
 
 run_json_test: $(JSON_TEST_TARGET)
 	$(VALGRIND) ./$(JSON_TEST_TARGET) || exit 1; echo $* passed;
-
-run_kword_test: $(KWORD_TEST_TARGET)
-	$(VALGRIND) ./$(KWORD_TEST_TARGET) || exit 1; echo $* passed;
 
 run_memfile_test: $(MEMFILE_TEST_TARGET)
 	$(VALGRIND) ./$(MEMFILE_TEST_TARGET) || exit 1; echo $* passed;
@@ -2081,7 +2053,10 @@ test1 \
 	test_getcwd \
 	test_insertcount \
 	test_listchars \
+	test_listlbr \
+	test_listlbr_utf8 \
 	test_search_mbyte \
+	test_utf8 \
 	test_wordcount \
 	test3 test4 test5 test6 test7 test8 test9 \
 	test11 test12 test14 test15 test17 test18 test19 \
@@ -2091,14 +2066,13 @@ test1 \
 	test50 test51 test52 test53 test54 test55 test56 test57 test58 test59 \
 	test60 test64 test65 test66 test67 test68 test69 \
 	test70 test72 test73 test74 test75 test77 test78 test79 \
-	test80 test82 test83 test84 test85 test86 test87 test88 \
+	test80 test82 test83 test84 test85 test86 test87 test88 test89 \
 	test90 test91 test94 test95 test97 test98 test99 \
 	test100 test101 test103 test104 test107 test108:
 	cd testdir; rm -f $@.out; $(MAKE) -f Makefile $@.out VIMPROG=../$(VIMTARGET) $(GUI_TESTARG) SCRIPTSOURCE=../$(SCRIPTSOURCE)
 
 # Run individual NEW style test, assuming that Vim was already compiled.
 test_arglist \
-	test_arabic \
 	test_assert \
 	test_assign \
 	test_autochdir \
@@ -2106,14 +2080,9 @@ test_arglist \
 	test_backspace_opt \
 	test_breakindent \
 	test_bufwintabinfo \
-	test_cd \
 	test_cdo \
-	test_changedtick \
 	test_channel \
 	test_charsearch \
-	test_charsearch_utf8 \
-	test_cindent \
-	test_clientserver \
 	test_cmdline \
 	test_command_count \
 	test_crypt \
@@ -2122,10 +2091,9 @@ test_arglist \
 	test_delete \
 	test_diffmode \
 	test_digraph \
+	test_functions \
 	test_display \
-	test_edit \
 	test_ex_undo \
-	test_ex_z \
 	test_execute_func \
 	test_expand \
 	test_expand_dllpath \
@@ -2137,22 +2105,16 @@ test_arglist \
 	test_fileformat \
 	test_filter_cmd \
 	test_filter_map \
-	test_findfile \
 	test_float_func \
 	test_fnameescape \
 	test_fnamemodify \
 	test_fold \
-	test_functions \
-	test_ga \
-	test_gf \
 	test_glob2regpat \
-	test_global \
+	test_gf \
 	test_gn \
 	test_goto \
 	test_gui \
-	test_gui_init \
 	test_hardcopy \
-	test_help \
 	test_help_tagjump \
 	test_hide \
 	test_history \
@@ -2167,10 +2129,6 @@ test_arglist \
 	test_langmap \
 	test_largefile \
 	test_lispwords \
-	test_listlbr \
-	test_listlbr_utf8 \
-	test_lua \
-	test_makeencoding \
 	test_man \
 	test_mapping \
 	test_marks \
@@ -2184,35 +2142,24 @@ test_arglist \
 	test_nested_function \
 	test_netbeans \
 	test_normal \
-	test_number \
 	test_options \
 	test_packadd \
 	test_partial \
-	test_paste \
 	test_perl \
 	test_popup \
 	test_profile \
-	test_put \
-	test_python2 \
-	test_python3 \
-	test_pyx2 \
-	test_pyx3 \
 	test_quickfix \
-	test_quotestar \
-	test_recover \
 	test_regexp_latin \
 	test_regexp_utf8 \
 	test_reltime \
-	test_retab \
 	test_ruby \
 	test_search \
 	test_searchpos \
 	test_set \
 	test_signs \
-	test_smartindent \
 	test_sort \
 	test_source_utf8 \
-	test_spell \
+	test_smartindent \
 	test_startup \
 	test_startup_utf8 \
 	test_stat \
@@ -2225,17 +2172,14 @@ test_arglist \
 	test_tabpage \
 	test_tagcase \
 	test_tagjump \
-	test_taglist \
-	test_tcl \
 	test_textobjects \
 	test_timers \
 	test_true_false \
 	test_undo \
 	test_unlet \
 	test_usercommands \
-	test_utf8 \
 	test_viminfo \
-	test_vimscript \
+	test_viml \
 	test_visual \
 	test_window_cmd \
 	test_window_id \
@@ -2268,13 +2212,6 @@ $(JSON_TEST_TARGET): auto/config.mk objects $(JSON_TEST_OBJ)
 	$(CCC) version.c -o objects/version.o
 	@LINK="$(PURIFY) $(SHRPENV) $(CClink) $(ALL_LIB_DIRS) $(LDFLAGS) \
 		-o $(JSON_TEST_TARGET) $(JSON_TEST_OBJ) $(ALL_LIBS)" \
-		MAKE="$(MAKE)" LINK_AS_NEEDED=$(LINK_AS_NEEDED) \
-		sh $(srcdir)/link.sh
-
-$(KWORD_TEST_TARGET): auto/config.mk objects $(KWORD_TEST_OBJ)
-	$(CCC) version.c -o objects/version.o
-	@LINK="$(PURIFY) $(SHRPENV) $(CClink) $(ALL_LIB_DIRS) $(LDFLAGS) \
-		-o $(KWORD_TEST_TARGET) $(KWORD_TEST_OBJ) $(ALL_LIBS)" \
 		MAKE="$(MAKE)" LINK_AS_NEEDED=$(LINK_AS_NEEDED) \
 		sh $(srcdir)/link.sh
 
@@ -2773,7 +2710,6 @@ clean celan: testclean
 	-rm -f *.o objects/* core $(VIMTARGET).core $(VIMTARGET) vim xxd/*.o
 	-rm -f $(TOOLS) auto/osdef.h auto/pathdef.c auto/if_perl.c auto/gui_gtk_gresources.c auto/gui_gtk_gresources.h
 	-rm -f conftest* *~ auto/link.sed
-	-rm -f testdir/opt_test.vim
 	-rm -f $(UNITTEST_TARGETS)
 	-rm -f runtime pixmaps
 	-rm -rf $(APPDIR)
@@ -2788,7 +2724,7 @@ SHADOWDIR = shadow
 
 shadow:	runtime pixmaps
 	mkdir $(SHADOWDIR)
-	cd $(SHADOWDIR); ln -s ../*.[chm] ../*.in ../*.sh ../*.xs ../*.xbm ../gui_gtk_res.xml ../toolcheck ../proto ../vimtutor ../gvimtutor ../mkinstalldirs .
+	cd $(SHADOWDIR); ln -s ../*.[ch] ../*.in ../*.sh ../*.xs ../*.xbm ../gui_gtk_res.xml ../toolcheck ../proto ../vimtutor ../gvimtutor ../mkinstalldirs .
 	mkdir $(SHADOWDIR)/auto
 	cd $(SHADOWDIR)/auto; ln -s ../../auto/configure .
 	mkdir $(SHADOWDIR)/po
@@ -2813,7 +2749,6 @@ shadow:	runtime pixmaps
 				 ../../testdir/*.vim \
 				 ../../testdir/*.py \
 				 ../../testdir/python* \
-				 ../../testdir/pyxfile \
 				 ../../testdir/sautest \
 				 ../../testdir/samples \
 				 ../../testdir/test83-tags? \
@@ -3041,7 +2976,7 @@ objects/gui_gtk_f.o: gui_gtk_f.c
 	$(CCC) -o $@ gui_gtk_f.c
 
 objects/gui_gtk_gresources.o: auto/gui_gtk_gresources.c
-	$(CCC_NF) $(PERL_CFLAGS) $(ALL_CFLAGS) -o $@ auto/gui_gtk_gresources.c
+	$(CCC) $(PERL_CFLAGS) -o $@ auto/gui_gtk_gresources.c
 
 objects/gui_gtk_x11.o: gui_gtk_x11.c
 	$(CCC) -o $@ gui_gtk_x11.c
@@ -3074,7 +3009,7 @@ objects/if_xcmdsrv.o: if_xcmdsrv.c
 	$(CCC) -o $@ if_xcmdsrv.c
 
 objects/if_lua.o: if_lua.c
-	$(CCC_NF) $(LUA_CFLAGS) $(ALL_CFLAGS) -o $@ if_lua.c
+	$(CCC) $(LUA_CFLAGS) -o $@ if_lua.c
 
 objects/if_mzsch.o: if_mzsch.c $(MZSCHEME_EXTRA)
 	$(CCC) -o $@ $(MZSCHEME_CFLAGS_EXTRA) if_mzsch.c
@@ -3083,28 +3018,27 @@ mzscheme_base.c:
 	$(MZSCHEME_MZC) --c-mods mzscheme_base.c ++lib scheme/base
 
 objects/if_perl.o: auto/if_perl.c
-	$(CCC_NF) $(PERL_CFLAGS) $(ALL_CFLAGS) -o $@ auto/if_perl.c
+	$(CCC) $(PERL_CFLAGS) -o $@ auto/if_perl.c
 
 objects/if_perlsfio.o: if_perlsfio.c
-	$(CCC_NF) $(PERL_CFLAGS) $(ALL_CFLAGS) -o $@ if_perlsfio.c
+	$(CCC) $(PERL_CFLAGS) -o $@ if_perlsfio.c
 
 objects/py_getpath.o: $(PYTHON_CONFDIR)/getpath.c
-	$(CCC_NF) $(PYTHON_CFLAGS) $(ALL_CFLAGS) -o $@ \
-		$(PYTHON_CONFDIR)/getpath.c \
+	$(CCC) $(PYTHON_CFLAGS) -o $@ $(PYTHON_CONFDIR)/getpath.c \
 		-I$(PYTHON_CONFDIR) -DHAVE_CONFIG_H -DNO_MAIN \
 		$(PYTHON_GETPATH_CFLAGS)
 
 objects/if_python.o: if_python.c if_py_both.h
-	$(CCC_NF) $(PYTHON_CFLAGS) $(PYTHON_CFLAGS_EXTRA) $(ALL_CFLAGS) -o $@ if_python.c
+	$(CCC) $(PYTHON_CFLAGS) $(PYTHON_CFLAGS_EXTRA) -o $@ if_python.c
 
 objects/if_python3.o: if_python3.c if_py_both.h
-	$(CCC_NF) $(PYTHON3_CFLAGS) $(PYTHON3_CFLAGS_EXTRA) $(ALL_CFLAGS) -o $@ if_python3.c
+	$(CCC) $(PYTHON3_CFLAGS) $(PYTHON3_CFLAGS_EXTRA) -o $@ if_python3.c
 
 objects/if_ruby.o: if_ruby.c
-	$(CCC_NF) $(RUBY_CFLAGS) $(ALL_CFLAGS) -o $@ if_ruby.c
+	$(CCC) $(RUBY_CFLAGS) -o $@ if_ruby.c
 
 objects/if_tcl.o: if_tcl.c
-	$(CCC_NF) $(TCL_CFLAGS) $(ALL_CFLAGS) -o $@ if_tcl.c
+	$(CCC) $(TCL_CFLAGS) -o $@ if_tcl.c
 
 objects/integration.o: integration.c
 	$(CCC) -o $@ integration.c
@@ -3114,9 +3048,6 @@ objects/json.o: json.c
 
 objects/json_test.o: json_test.c
 	$(CCC) -o $@ json_test.c
-
-objects/kword_test.o: kword_test.c
-	$(CCC) -o $@ kword_test.c
 
 objects/list.o: list.c
 	$(CCC) -o $@ list.c
@@ -3164,7 +3095,7 @@ objects/ops.o: ops.c
 	$(CCC) -o $@ ops.c
 
 objects/option.o: option.c
-	$(CCC_NF) $(LUA_CFLAGS) $(PERL_CFLAGS) $(PYTHON_CFLAGS) $(PYTHON3_CFLAGS) $(RUBY_CFLAGS) $(TCL_CFLAGS) $(ALL_CFLAGS) -o $@ option.c
+	$(CCC) $(LUA_CFLAGS) $(PERL_CFLAGS) $(PYTHON_CFLAGS) $(PYTHON3_CFLAGS) $(RUBY_CFLAGS) $(TCL_CFLAGS) -o $@ option.c
 
 objects/os_beos.o: os_beos.c
 	$(CCC) -o $@ os_beos.c
@@ -3657,10 +3588,6 @@ objects/json_test.o: json_test.c main.c vim.h auto/config.h feature.h os_unix.h 
  auto/osdef.h ascii.h keymap.h term.h macros.h option.h structs.h \
  regexp.h gui.h gui_beval.h proto/gui_beval.pro alloc.h ex_cmds.h spell.h \
  proto.h globals.h farsi.h arabic.h json.c
-objects/kword_test.o: kword_test.c main.c vim.h auto/config.h feature.h os_unix.h \
- auto/osdef.h ascii.h keymap.h term.h macros.h option.h structs.h \
- regexp.h gui.h gui_beval.h proto/gui_beval.pro alloc.h ex_cmds.h spell.h \
- proto.h globals.h farsi.h arabic.h charset.c mbyte.c
 objects/memfile_test.o: memfile_test.c main.c vim.h auto/config.h feature.h \
  os_unix.h auto/osdef.h ascii.h keymap.h term.h macros.h option.h \
  structs.h regexp.h gui.h gui_beval.h proto/gui_beval.pro alloc.h \

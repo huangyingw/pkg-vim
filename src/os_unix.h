@@ -213,6 +213,9 @@ typedef struct dsc$descriptor   DESC;
 /*
  * Unix system-dependent file names
  */
+#ifndef SYS_TINYRC_FILE
+# define SYS_TINYRC_FILE "$VIM/vimrc.tiny"
+#endif
 #ifndef SYS_VIMRC_FILE
 # define SYS_VIMRC_FILE "$VIM/vimrc"
 #endif
@@ -423,17 +426,21 @@ typedef struct dsc$descriptor   DESC;
 # endif
 #endif
 
-/* memmove() is not present on all systems, use memmove, bcopy or memcpy.
- * Some systems have (void *) arguments, some (char *). If we use (char *) it
+/* memmove is not present on all systems, use memmove, bcopy, memcpy or our
+ * own version */
+/* Some systems have (void *) arguments, some (char *). If we use (char *) it
  * works for all */
-#if defined(USEMEMMOVE) || (!defined(USEBCOPY) && !defined(USEMEMCPY))
+#ifdef USEMEMMOVE
 # define mch_memmove(to, from, len) memmove((char *)(to), (char *)(from), len)
 #else
 # ifdef USEBCOPY
 #  define mch_memmove(to, from, len) bcopy((char *)(from), (char *)(to), len)
 # else
-    /* ifdef USEMEMCPY */
+#  ifdef USEMEMCPY
 #   define mch_memmove(to, from, len) memcpy((char *)(to), (char *)(from), len)
+#  else
+#   define VIM_MEMMOVE	    /* found in misc2.c */
+#  endif
 # endif
 #endif
 

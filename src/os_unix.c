@@ -467,12 +467,6 @@ mch_inchar(
 	if ((wait_time < 0 || wait_time > 100L) && channel_any_readahead())
 	    wait_time = 10L;
 #endif
-#ifdef FEAT_BEVAL
-	if (p_beval && wait_time > 100L)
-	    /* The 'balloonexpr' may indirectly invoke a callback while waiting
-	     * for a character, need to check often. */
-	    wait_time = 100L;
-#endif
 
 	/*
 	 * We want to be interrupted by the winch signal
@@ -511,7 +505,7 @@ mch_inchar(
 		|| interrupted
 #endif
 		|| wait_time > 0
-		|| (wtime < 0 && !did_start_blocking))
+		|| !did_start_blocking)
 	    continue;
 
 	/* no character available or interrupted */
@@ -3081,7 +3075,7 @@ executable_file(char_u *name)
 }
 
 /*
- * Return TRUE if "name" can be found in $PATH and executed, FALSE if not.
+ * Return 1 if "name" can be found in $PATH and executed, 0 if not.
  * If "use_path" is FALSE only check if "name" is executable.
  * Return -1 if unknown.
  */
@@ -3103,7 +3097,7 @@ mch_can_exe(char_u *name, char_u **path, int use_path)
 	{
 	    if (path != NULL)
 	    {
-		if (name[0] != '/')
+		if (name[0] == '.')
 		    *path = FullName_save(name, TRUE);
 		else
 		    *path = vim_strsave(name);
@@ -3142,7 +3136,7 @@ mch_can_exe(char_u *name, char_u **path, int use_path)
 	{
 	    if (path != NULL)
 	    {
-		if (buf[0] != '/')
+		if (buf[0] == '.')
 		    *path = FullName_save(buf, TRUE);
 		else
 		    *path = vim_strsave(buf);
@@ -5429,10 +5423,8 @@ mch_stop_job(job_T *job, char_u *how)
 
     /* TODO: have an option to only kill the process, not the group? */
     job_pid = job->jv_pid;
-#ifdef HAVE_GETPGID
     if (job_pid == getpgid(job_pid))
 	job_pid = -job_pid;
-#endif
 
     kill(job_pid, sig);
 
@@ -6006,7 +5998,6 @@ mch_expand_wildcards(
 {
     int		i;
     size_t	len;
-    long	llen;
     char_u	*p;
     int		dir;
 
@@ -6140,7 +6131,7 @@ mch_expand_wildcards(
 	STRCAT(command, pat[0] + 1);		/* exclude first backtick */
 	p = command + STRLEN(command) - 1;
 	*p-- = ')';				/* remove last backtick */
-	while (p > command && VIM_ISWHITE(*p))
+	while (p > command && vim_iswhite(*p))
 	    --p;
 	if (*p == '&')				/* remove trailing '&' */
 	{
@@ -6293,13 +6284,9 @@ mch_expand_wildcards(
 	goto notfound;
     }
     fseek(fd, 0L, SEEK_END);
-    llen = ftell(fd);			/* get size of temp file */
+    len = ftell(fd);			/* get size of temp file */
     fseek(fd, 0L, SEEK_SET);
-    if (llen < 0)
-	/* just in case ftell() would fail */
-	buffer = NULL;
-    else
-	buffer = alloc(llen + 1);
+    buffer = alloc(len + 1);
     if (buffer == NULL)
     {
 	/* out of memory */
@@ -6308,7 +6295,6 @@ mch_expand_wildcards(
 	fclose(fd);
 	return FAIL;
     }
-    len = llen;
     i = fread((char *)buffer, 1, len, fd);
     fclose(fd);
     mch_remove(tempname);
@@ -6528,7 +6514,7 @@ save_patterns(
     int
 mch_has_exp_wildcard(char_u *p)
 {
-    for ( ; *p; MB_PTR_ADV(p))
+    for ( ; *p; mb_ptr_adv(p))
     {
 	if (*p == '\\' && p[1] != NUL)
 	    ++p;
@@ -6552,7 +6538,7 @@ mch_has_exp_wildcard(char_u *p)
     int
 mch_has_wildcard(char_u *p)
 {
-    for ( ; *p; MB_PTR_ADV(p))
+    for ( ; *p; mb_ptr_adv(p))
     {
 	if (*p == '\\' && p[1] != NUL)
 	    ++p;
@@ -6932,7 +6918,7 @@ mch_libcall(
 	    if (argstring != NULL)
 	    {
 # if defined(USE_DLOPEN)
-		*(void **)(&ProcAdd) = dlsym(hinstLib, (const char *)funcname);
+		ProcAdd = (STRPROCSTR)dlsym(hinstLib, (const char *)funcname);
 		dlerr = (char *)dlerror();
 # else
 		if (shl_findsym(&hinstLib, (const char *)funcname,
@@ -6954,7 +6940,7 @@ mch_libcall(
 	    else
 	    {
 # if defined(USE_DLOPEN)
-		*(void **)(&ProcAddI) = dlsym(hinstLib, (const char *)funcname);
+		ProcAddI = (INTPROCSTR)dlsym(hinstLib, (const char *)funcname);
 		dlerr = (char *)dlerror();
 # else
 		if (shl_findsym(&hinstLib, (const char *)funcname,

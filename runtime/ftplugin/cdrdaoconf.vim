@@ -1,6 +1,6 @@
 " Vim filetype plugin file
-" Previous Maintainer:  Nikolai Weibull <now@bitwi.se>
-" Latest Revision:      2007-12-04
+" Maintainer:       Nikolai Weibull <now@bitwi.se>
+" Latest Revision:  2007-12-04
 
 if exists("b:did_ftplugin")
   finish

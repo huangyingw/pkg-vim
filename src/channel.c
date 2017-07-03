@@ -1840,42 +1840,39 @@ channel_save(channel_T *channel, ch_part_T part, char_u *buf, int len,
     return OK;
 }
 
-/*
- * Try to fill the buffer of "reader".
- * Returns FALSE when nothing was added.
- */
     static int
 channel_fill(js_read_T *reader)
 {
     channel_T	*channel = (channel_T *)reader->js_cookie;
     ch_part_T	part = reader->js_cookie_arg;
     char_u	*next = channel_get(channel, part);
-    int		keeplen;
-    int		addlen;
+    int		unused;
+    int		len;
     char_u	*p;
 
     if (next == NULL)
 	return FALSE;
 
-    keeplen = reader->js_end - reader->js_buf;
-    if (keeplen > 0)
+    unused = reader->js_end - reader->js_buf - reader->js_used;
+    if (unused > 0)
     {
 	/* Prepend unused text. */
-	addlen = (int)STRLEN(next);
-	p = alloc(keeplen + addlen + 1);
+	len = (int)STRLEN(next);
+	p = alloc(unused + len + 1);
 	if (p == NULL)
 	{
 	    vim_free(next);
 	    return FALSE;
 	}
-	mch_memmove(p, reader->js_buf, keeplen);
-	mch_memmove(p + keeplen, next, addlen + 1);
+	mch_memmove(p, reader->js_buf + reader->js_used, unused);
+	mch_memmove(p + unused, next, len + 1);
 	vim_free(next);
 	next = p;
     }
 
     vim_free(reader->js_buf);
     reader->js_buf = next;
+    reader->js_used = 0;
     return TRUE;
 }
 
@@ -1955,20 +1952,16 @@ channel_parse_json(channel_T *channel, ch_part_T part)
     }
 
     if (status == OK)
-	chanpart->ch_wait_len = 0;
+	chanpart->ch_waiting = FALSE;
     else if (status == MAYBE)
     {
-	size_t buflen = STRLEN(reader.js_buf);
-
-	if (chanpart->ch_wait_len < buflen)
+	if (!chanpart->ch_waiting)
 	{
-	    /* First time encountering incomplete message or after receiving
-	     * more (but still incomplete): set a deadline of 100 msec. */
-	    ch_logn(channel,
-		    "Incomplete message (%d bytes) - wait 100 msec for more",
-		    (int)buflen);
+	    /* First time encountering incomplete message, set a deadline of
+	     * 100 msec. */
+	    ch_log(channel, "Incomplete message - wait for more");
 	    reader.js_used = 0;
-	    chanpart->ch_wait_len = buflen;
+	    chanpart->ch_waiting = TRUE;
 #ifdef WIN32
 	    chanpart->ch_deadline = GetTickCount() + 100L;
 #else
@@ -1999,8 +1992,7 @@ channel_parse_json(channel_T *channel, ch_part_T part)
 	    if (timeout)
 	    {
 		status = FAIL;
-		chanpart->ch_wait_len = 0;
-		ch_log(channel, "timed out");
+		chanpart->ch_waiting = FALSE;
 	    }
 	    else
 	    {
@@ -2014,7 +2006,7 @@ channel_parse_json(channel_T *channel, ch_part_T part)
     {
 	ch_error(channel, "Decoding failed - discarding input");
 	ret = FALSE;
-	chanpart->ch_wait_len = 0;
+	chanpart->ch_waiting = FALSE;
     }
     else if (reader.js_buf[reader.js_used] != NUL)
     {
@@ -2571,14 +2563,9 @@ may_invoke_callback(channel_T *channel, ch_part_T part)
 	    if (nl == NULL)
 	    {
 		/* Flush remaining message that is missing a NL. */
-		char_u	*new_buf;
-
-		new_buf = vim_realloc(buf, node->rq_buflen + 1);
-		if (new_buf == NULL)
-		    /* This might fail over and over again, should the message
-		     * be dropped? */
+		buf = vim_realloc(buf, node->rq_buflen + 1);
+		if (buf == NULL)
 		    return FALSE;
-		buf = new_buf;
 		node->rq_buffer = buf;
 		nl = buf + node->rq_buflen++;
 		*nl = NUL;
@@ -3304,7 +3291,6 @@ channel_read_block(channel_T *channel, ch_part_T part, int timeout)
 	channel_read(channel, part, "channel_read_block");
     }
 
-    /* We have a complete message now. */
     if (mode == MODE_RAW)
     {
 	msg = channel_get_all(channel, part);
@@ -3383,7 +3369,7 @@ channel_read_json_block(
 	    /* Wait for up to the timeout.  If there was an incomplete message
 	     * use the deadline for that. */
 	    timeout = timeout_arg;
-	    if (chanpart->ch_wait_len > 0)
+	    if (chanpart->ch_waiting)
 	    {
 #ifdef WIN32
 		timeout = chanpart->ch_deadline - GetTickCount() + 1;
@@ -3403,7 +3389,7 @@ channel_read_json_block(
 		{
 		    /* Something went wrong, channel_parse_json() didn't
 		     * discard message.  Cancel waiting. */
-		    chanpart->ch_wait_len = 0;
+		    chanpart->ch_waiting = FALSE;
 		    timeout = timeout_arg;
 		}
 		else if (timeout > timeout_arg)

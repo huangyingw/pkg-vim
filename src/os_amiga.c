@@ -889,8 +889,6 @@ mch_early_init(void)
     void
 mch_exit(int r)
 {
-    exiting = TRUE;
-
     if (raw_in)			    /* put terminal in 'normal' mode */
     {
 	settmode(TMODE_COOK);
@@ -1567,7 +1565,7 @@ sortcmp(const void *a, const void *b)
     int
 mch_has_exp_wildcard(char_u *p)
 {
-    for ( ; *p; MB_PTR_ADV(p))
+    for ( ; *p; mb_ptr_adv(p))
     {
 	if (*p == '\\' && p[1] != NUL)
 	    ++p;
@@ -1580,7 +1578,7 @@ mch_has_exp_wildcard(char_u *p)
     int
 mch_has_wildcard(char_u *p)
 {
-    for ( ; *p; MB_PTR_ADV(p))
+    for ( ; *p; mb_ptr_adv(p))
     {
 	if (*p == '\\' && p[1] != NUL)
 	    ++p;

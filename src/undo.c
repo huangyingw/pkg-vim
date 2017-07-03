@@ -833,7 +833,7 @@ u_get_undo_file_name(char_u *buf_ffname, int reading)
 		    munged_name = vim_strsave(ffname);
 		    if (munged_name == NULL)
 			return NULL;
-		    for (p = munged_name; *p != NUL; MB_PTR_ADV(p))
+		    for (p = munged_name; *p != NUL; mb_ptr_adv(p))
 			if (vim_ispathsep(*p))
 			    *p = '%';
 		}
@@ -2784,7 +2784,7 @@ u_undoredo(int undo)
 
     curhead->uh_entry = newlist;
     curhead->uh_flags = new_flags;
-    if ((old_flags & UH_EMPTYBUF) && BUFEMPTY())
+    if ((old_flags & UH_EMPTYBUF) && bufempty())
 	curbuf->b_ml.ml_flags |= ML_EMPTY;
     if (old_flags & UH_CHANGED)
 	changed();
@@ -3079,7 +3079,7 @@ ex_undolist(exarg_T *eap UNUSED)
 
 	msg_start();
 	msg_puts_attr((char_u *)_("number changes  when               saved"),
-							      HL_ATTR(HLF_T));
+							      hl_attr(HLF_T));
 	for (i = 0; i < ga.ga_len && !got_int; ++i)
 	{
 	    msg_putchar('\n');
@@ -3136,8 +3136,11 @@ ex_undojoin(exarg_T *eap UNUSED)
     if (get_undolevel() < 0)
 	return;		    /* no entries, nothing to do */
     else
-	/* Append next change to the last entry */
-	curbuf->b_u_synced = FALSE;
+    {
+	/* Go back to the last entry */
+	curbuf->b_u_curhead = curbuf->b_u_newhead;
+	curbuf->b_u_synced = FALSE;  /* no entries, nothing to do */
+    }
 }
 
 /*
@@ -3175,14 +3178,14 @@ u_find_first_changed(void)
 	if (STRCMP(ml_get_buf(curbuf, lnum, FALSE),
 						uep->ue_array[lnum - 1]) != 0)
 	{
-	    CLEAR_POS(&(uhp->uh_cursor));
+	    clearpos(&(uhp->uh_cursor));
 	    uhp->uh_cursor.lnum = lnum;
 	    return;
 	}
     if (curbuf->b_ml.ml_line_count != uep->ue_size)
     {
 	/* lines added or deleted at the end, put the cursor there */
-	CLEAR_POS(&(uhp->uh_cursor));
+	clearpos(&(uhp->uh_cursor));
 	uhp->uh_cursor.lnum = lnum;
     }
 }

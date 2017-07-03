@@ -363,19 +363,12 @@ ui_breakcheck(void)
     void
 ui_breakcheck_force(int force)
 {
-    int save_us = updating_screen;
-
-    /* We do not want gui_resize_shell() to redraw the screen here. */
-    ++updating_screen;
-
 #ifdef FEAT_GUI
     if (gui.in_use)
 	gui_mch_update();
     else
 #endif
 	mch_breakcheck(force);
-
-    updating_screen = save_us;
 }
 
 /*****************************************************************************
@@ -391,6 +384,8 @@ ui_breakcheck_force(int force)
  */
 
 #if defined(FEAT_CLIPBOARD) || defined(PROTO)
+
+static void clip_copy_selection(VimClipboard *clip);
 
 /*
  * Selection stuff using Visual mode, for cutting and pasting text to other
@@ -440,7 +435,7 @@ clip_update_selection(VimClipboard *clip)
     /* If visual mode is only due to a redo command ("."), then ignore it */
     if (!redo_VIsual_busy && VIsual_active && (State & NORMAL))
     {
-	if (LT_POS(VIsual, curwin->w_cursor))
+	if (lt(VIsual, curwin->w_cursor))
 	{
 	    start = VIsual;
 	    end = curwin->w_cursor;
@@ -454,8 +449,8 @@ clip_update_selection(VimClipboard *clip)
 	    start = curwin->w_cursor;
 	    end = VIsual;
 	}
-	if (!EQUAL_POS(clip->start, start)
-		|| !EQUAL_POS(clip->end, end)
+	if (!equalpos(clip->start, start)
+		|| !equalpos(clip->end, end)
 		|| clip->vmode != VIsual_mode)
 	{
 	    clip_clear_selection(clip);
@@ -494,7 +489,7 @@ clip_own_selection(VimClipboard *cbd)
 					    || get_real_state() == SELECTMODE)
 		    && (cbd == &clip_star ? clip_isautosel_star()
 						      : clip_isautosel_plus())
-		    && HL_ATTR(HLF_V) != HL_ATTR(HLF_VNC))
+		    && hl_attr(HLF_V) != hl_attr(HLF_VNC))
 		redraw_curbuf_later(INVERTED_ALL);
 	}
     }
@@ -532,7 +527,7 @@ clip_lose_selection(VimClipboard *cbd)
 					    || get_real_state() == SELECTMODE)
 		&& (cbd == &clip_star ?
 				clip_isautosel_star() : clip_isautosel_plus())
-		&& HL_ATTR(HLF_V) != HL_ATTR(HLF_VNC))
+		&& hl_attr(HLF_V) != hl_attr(HLF_VNC))
 	{
 	    update_curbuf(INVERTED_ALL);
 	    setcursor();
@@ -567,8 +562,7 @@ clip_copy_selection(VimClipboard *clip)
  * considerably.
  */
 static int global_change_count = 0; /* if set, inside a start_global_changes */
-static int clipboard_needs_update = FALSE; /* clipboard needs to be updated */
-static int clip_did_set_selection = TRUE;
+static int clipboard_needs_update; /* clipboard needs to be updated */
 
 /*
  * Save clip_unnamed and reset it.
@@ -586,16 +580,6 @@ start_global_changes(void)
 	clip_unnamed = FALSE;
 	clip_did_set_selection = FALSE;
     }
-}
-
-/*
- * Return TRUE if setting the clipboard was postponed, it already contains the
- * right text.
- */
-    int
-is_clipboard_needs_update()
-{
-    return clipboard_needs_update;
 }
 
 /*
@@ -628,7 +612,6 @@ end_global_changes(void)
 	    }
 	}
     }
-    clipboard_needs_update = FALSE;
 }
 
 /*
@@ -3202,7 +3185,7 @@ vcol2col(win_T *wp, linenr_T lnum, int vcol)
     while (count < vcol && *ptr != NUL)
     {
 	count += win_lbr_chartabsize(wp, line, ptr, count, NULL);
-	MB_PTR_ADV(ptr);
+	mb_ptr_adv(ptr);
     }
     return (int)(ptr - line);
 }

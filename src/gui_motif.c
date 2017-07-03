@@ -8,8 +8,6 @@
  * See README.txt for an overview of the Vim source code.
  */
 
-#include "vim.h"
-
 #include <Xm/Form.h>
 #include <Xm/RowColumn.h>
 #include <Xm/PushB.h>
@@ -34,6 +32,8 @@
 #include <X11/Xatom.h>
 #include <X11/StringDefs.h>
 #include <X11/Intrinsic.h>
+
+#include "vim.h"
 
 #ifdef HAVE_X11_XPM_H
 # include <X11/xpm.h>

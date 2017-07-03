@@ -16,8 +16,6 @@
  * when using a dynamic scrollbar policy.
  */
 
-#include "vim.h"
-
 #include <Xm/Form.h>
 #include <Xm/PushBG.h>
 #include <Xm/Text.h>
@@ -37,6 +35,8 @@
 #include <X11/Xatom.h>
 #include <X11/StringDefs.h>
 #include <X11/Intrinsic.h>
+
+#include "vim.h"
 
 extern Widget vimShell;
 

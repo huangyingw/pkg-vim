@@ -8,7 +8,6 @@ func Test_file_delete()
   call assert_equal(0, delete('Xfile'))
   call assert_fails('call readfile("Xfile")', 'E484:')
   call assert_equal(-1, delete('Xfile'))
-  bwipe Xfile
 endfunc
 
 func Test_dir_delete()
@@ -36,8 +35,6 @@ func Test_recursive_delete()
   call assert_equal(0, delete('Xdir1', 'rf'))
   call assert_false(isdirectory('Xdir1'))
   call assert_equal(-1, delete('Xdir1', 'd'))
-  bwipe Xdir1/Xfile
-  bwipe Xdir1/subdir/Xfile
 endfunc
 
 func Test_symlink_delete()
@@ -52,7 +49,6 @@ func Test_symlink_delete()
   call assert_equal(0, delete('Xlink'))
   call assert_equal(-1, delete('Xlink'))
   call assert_equal(0, delete('Xfile'))
-  bwipe Xfile
 endfunc
 
 func Test_symlink_dir_delete()
@@ -100,8 +96,4 @@ func Test_symlink_recursive_delete()
   call assert_equal(['a', 'b'], readfile('Xdir4/Xfile'))
   call assert_equal(0, delete('Xdir4/Xfile'))
   call assert_equal(0, delete('Xdir4', 'd'))
-
-  bwipe Xdir3/Xfile
-  bwipe Xdir3/subdir/Xfile
-  bwipe Xdir4/Xfile
 endfunc

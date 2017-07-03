@@ -1,10 +1,9 @@
 " Vim syntax file
 " Language:	X Pixmap v2
 " Maintainer:	Steve Wall (hitched97@velnet.com)
-" Last Change:	2017 Feb 01
+" Last Change:	2012 Jun 01
 " 		(Dominique Pelle added @Spell)
 " Version:	5.8
-"               Jemma Nelson added termguicolors support
 "
 " Made from xpm.vim by Ronald Schild <rs@scutum.de>
 
@@ -23,7 +22,7 @@ syn match   xpm2Comment		"\!.*$"  contains=@Spell,xpm2Todo
 
 command -nargs=+ Hi hi def <args>
 
-if has("gui_running") || has("termguicolors") && &termguicolors
+if has("gui_running")
 
   let color  = ""
   let chars  = ""
@@ -133,7 +132,7 @@ if has("gui_running") || has("termguicolors") && &termguicolors
 
   unlet color chars colors cpp n i s
 
-endif          " has("gui_running") || has("termguicolors") && &termguicolors
+endif		" has("gui_running")
 
 " Define the default highlighting.
 " Only when an item doesn't have highlighting yet

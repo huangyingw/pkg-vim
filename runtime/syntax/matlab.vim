@@ -1,13 +1,11 @@
 " Vim syntax file
 " Language:	Matlab
-" Maintainer:	Alex Burka <vim@alexburka.com>
+" Maintainer:	Maurizio Tranchero - maurizio(.)tranchero(@)gmail(.)com
 " Credits:	Preben 'Peppe' Guldberg <peppe-vim@wielders.org>
-"		Maurizio Tranchero - maurizio(.)tranchero(@)gmail(.)com
 "		Original author: Mario Eusebio
-" Last Change:	Mon Jan 23 2017
-" 		added support for cell mode
+" Last Change:	Wed Jan 13 11:12:34 CET 2010
+" 		sinh added to matlab implicit commands
 " Change History:
-" 		- now highlights cell-mode separator comments
 " 		- 'global' and 'persistent' keyword are now recognized
 
 " quit when a syntax file was already loaded
@@ -62,7 +60,6 @@ syn match matlabComment			"%.*$"	contains=matlabTodo,matlabTab
 " MT_ADDON - correctly highlights words after '...' as comments
 syn match matlabComment			"\.\.\..*$"	contains=matlabTodo,matlabTab
 syn region matlabMultilineComment	start=+%{+ end=+%}+ contains=matlabTodo,matlabTab
-syn match matlabCellComment     "^%%.*$"
 
 syn keyword matlabOperator		break zeros default margin round ones rand
 syn keyword matlabOperator		ceil floor size clear zeros eye mean std cov
@@ -99,7 +96,6 @@ hi def link matlabOO			Statement
 hi def link matlabSemicolon		SpecialChar
 hi def link matlabComment			Comment
 hi def link matlabMultilineComment		Comment
-hi def link matlabCellComment          Todo
 hi def link matlabScope			Type
 
 hi def link matlabArithmeticOperator	matlabOperator

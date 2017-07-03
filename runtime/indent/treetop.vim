@@ -1,7 +1,7 @@
 " Vim indent file
-" Language:             Treetop
-" Previous Maintainer:  Nikolai Weibull <now@bitwi.se>
-" Latest Revision:      2011-03-14
+" Language:         Treetop
+" Maintainer:       Nikolai Weibull <now@bitwi.se>
+" Latest Revision:  2011-03-14
 
 if exists("b:did_indent")
   finish
@@ -26,12 +26,12 @@ function GetTreetopIndent()
   let line = getline(pnum)
 
   if line =~ '^\s*\%(grammar\|module\|rule\)\>'
-    let ind += shiftwidth()
+    let ind += &sw
   endif
 
   let line = getline(v:lnum)
   if line =~ '^\s*end\>'
-    let ind -= shiftwidth()
+    let ind -= &sw
   end
 
   retur ind

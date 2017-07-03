@@ -1,7 +1,7 @@
 " Vim support file to detect file types in scripts
 "
 " Maintainer:	Bram Moolenaar <Bram@vim.org>
-" Last change:	2017 Mar 04
+" Last change:	2016 May 21
 
 " This file is called by an autocommand for every file that has just been
 " loaded into a buffer.  It checks if the type of file can be recognized by
@@ -124,10 +124,6 @@ if s:line1 =~ "^#!"
   elseif s:name =~ 'ruby'
     set ft=ruby
 
-    " JavaScript
-  elseif s:name =~ 'node\(js\)\=\>' || s:name =~ 'rhino\>'
-    set ft=javascript
-
     " BC calculator
   elseif s:name =~ '^bc\>'
     set ft=bc
@@ -159,14 +155,6 @@ if s:line1 =~ "^#!"
     " Erlang scripts
   elseif s:name =~ 'escript'
     set ft=erlang
-
-    " Haskell
-  elseif s:name =~ 'haskell'
-    set ft=haskell
-
-    " Scala
-  elseif s:name =~ 'scala\>'
-    set ft=scala
 
   endif
   unlet s:name
@@ -343,6 +331,14 @@ else
   " Scheme scripts
   elseif s:line1 =~ 'exec\s\+\S*scheme' || s:line2 =~ 'exec\s\+\S*scheme'
     set ft=scheme
+
+  " rst files
+  elseif s:line1 =~ '^\.\.\s\|^\s*restindex\s*$'
+	\ || s:line2 =~ '^\.\.\s\|^\s*restindex\s*$'
+	\ || s:line3 =~ '^\.\.\s\|^\s*restindex\s*$'
+	\ || s:line4 =~ '^\.\.\s\|^\s*restindex\s*$'
+	\ || s:line5 =~ '^\.\.\s\|^\s*restindex\s*$'
+    set ft=rst
 
   " Git output
   elseif s:line1 =~ '^\(commit\|tree\|object\) \x\{40\}\>\|^tag \S\+$'

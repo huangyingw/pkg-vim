@@ -1,7 +1,7 @@
 " Vim support file to detect file types
 "
 " Maintainer:	Bram Moolenaar <Bram@vim.org>
-" Last Change:	2017 Mar 27
+" Last Change:	2017 Jan 06
 
 " Listen very carefully, I will say this only once
 if exists("did_load_filetypes")
@@ -288,8 +288,7 @@ au BufNewFile,BufRead *.bib			setf bib
 au BufNewFile,BufRead *.bst			setf bst
 
 " BIND configuration
-" sudoedit uses namedXXXX.conf
-au BufNewFile,BufRead named*.conf,rndc*.conf	setf named
+au BufNewFile,BufRead named.conf,rndc.conf	setf named
 
 " BIND zone
 au BufNewFile,BufRead named.root		setf bindzone
@@ -677,14 +676,8 @@ au BufNewFile,BufRead *.dtd			setf dtd
 " DTS/DSTI (device tree files)
 au BufNewFile,BufRead *.dts,*.dtsi		setf dts
 
-" EDIF (*.edf,*.edif,*.edn,*.edo) or edn
-au BufNewFile,BufRead *.ed\(f\|if\|o\)		setf edif
-au BufNewFile,BufRead *.edn
-	\ if getline(1) =~ '^\s*(\s*edif\>' |
-	\   setf edif |
-	\ else |
-	\   setf clojure |
-	\ endif
+" EDIF (*.edf,*.edif,*.edn,*.edo)
+au BufNewFile,BufRead *.ed\(f\|if\|n\|o\)	setf edif
 
 " EditorConfig (close enough to dosini)
 au BufNewFile,BufRead .editorconfig		setf dosini
@@ -1366,9 +1359,6 @@ endfunc
 
 " Not Quite C
 au BufNewFile,BufRead *.nqc			setf nqc
-
-" NSE - Nmap Script Engine - uses Lua syntax
-au BufNewFile,BufRead *.nse			setf lua
 
 " NSIS
 au BufNewFile,BufRead *.nsi,*.nsh		setf nsis
@@ -2237,7 +2227,7 @@ func! s:FTtex()
     call cursor(1,1)
     let firstNC = search('^\s*[^[:space:]%]', 'c', 1000)
     if firstNC " Check the next thousand lines for a LaTeX or ConTeXt keyword.
-      let lpat = 'documentclass\>\|usepackage\>\|begin{\|newcommand\>\|renewcommand\>'
+      let lpat = 'documentclass\>\|usepackage\>\|begin{\|newcommand\>\|renewcommand\>\|part\>\|chapter\>\|section\>\|subsection\>\|subsubsection\>\|paragraph\>\|subparagraph\>\|subsubparagraph'
       let cpat = 'start\a\+\|setup\a\+\|usemodule\|enablemode\|enableregime\|setvariables\|useencoding\|usesymbols\|stelle\a\+\|verwende\a\+\|stel\a\+\|gebruik\a\+\|usa\a\+\|imposta\a\+\|regle\a\+\|utilisemodule\>'
       let kwline = search('^\s*\\\%(' . lpat . '\)\|^\s*\\\(' . cpat . '\)',
 			      \ 'cnp', firstNC + 1000)
@@ -2283,9 +2273,6 @@ au BufNewFile,BufRead .tidyrc,tidyrc		setf tidy
 
 " TF mud client
 au BufNewFile,BufRead *.tf,.tfrc,tfrc		setf tf
-
-" tmux configuration
-au BufNewFile,BufRead {.,}tmux*.conf		setf tmux
 
 " TPP - Text Presentation Program
 au BufNewFile,BufReadPost *.tpp			setf tpp

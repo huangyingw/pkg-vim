@@ -335,7 +335,7 @@ pum_redraw(void)
 		case 3: p = pum_array[idx].pum_extra; break;
 	    }
 	    if (p != NULL)
-		for ( ; ; MB_PTR_ADV(p))
+		for ( ; ; mb_ptr_adv(p))
 		{
 		    if (s == NULL)
 			s = p;
@@ -369,7 +369,7 @@ pum_redraw(void)
 					{
 					    size -= has_mbyte
 						    ? (*mb_ptr2cells)(rt) : 1;
-					    MB_PTR_ADV(rt);
+					    mb_ptr_adv(rt);
 					} while (size > pum_width);
 
 					if (size < pum_width)
@@ -590,7 +590,7 @@ pum_set_selected(int n, int repeat)
 			&& curbuf->b_p_bh[0] == 'w')
 		{
 		    /* Already a "wipeout" buffer, make it empty. */
-		    while (!BUFEMPTY())
+		    while (!bufempty())
 			ml_delete((linenr_T)1, FALSE);
 		}
 		else

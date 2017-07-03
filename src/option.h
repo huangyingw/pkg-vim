@@ -630,9 +630,6 @@ EXTERN char_u	*p_luadll;	/* 'luadll' */
 EXTERN int	p_macatsui;	/* 'macatsui' */
 #endif
 EXTERN int	p_magic;	/* 'magic' */
-#ifdef FEAT_MBYTE
-EXTERN char_u	*p_menc;	/* 'makeencoding' */
-#endif
 #ifdef FEAT_QUICKFIX
 EXTERN char_u	*p_mef;		/* 'makeef' */
 EXTERN char_u	*p_mp;		/* 'makeprg' */
@@ -696,9 +693,6 @@ EXTERN char_u	*p_py3dll;	/* 'pythonthreedll' */
 #endif
 #if defined(DYNAMIC_PYTHON)
 EXTERN char_u	*p_pydll;	/* 'pythondll' */
-#endif
-#if defined(FEAT_PYTHON) || defined(FEAT_PYTHON3)
-EXTERN long	p_pyx;		/* 'pyxversion' */
 #endif
 #ifdef FEAT_RELTIME
 EXTERN long	p_rdt;		/* 'redrawtime' */
@@ -1067,9 +1061,6 @@ enum
 #ifdef FEAT_LISP
     , BV_LISP
     , BV_LW
-#endif
-#ifdef FEAT_MBYTE
-    , BV_MENC
 #endif
     , BV_MA
     , BV_ML

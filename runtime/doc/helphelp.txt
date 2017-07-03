@@ -1,4 +1,4 @@
-*helphelp.txt*	For Vim version 8.0.  Last change: 2017 Mar 19
+*helphelp.txt*	For Vim version 8.0.  Last change: 2016 Apr 01
 
 
 		  VIM REFERENCE MANUAL    by Bram Moolenaar
@@ -28,16 +28,10 @@ Help on help files					*helphelp*
 
 						*{subject}* *E149* *E661*
 :h[elp] {subject}	Like ":help", additionally jump to the tag {subject}.
-			For example:  >
-				:help options
-
-<			{subject} can include wildcards such as "*", "?" and
+			{subject} can include wildcards like "*", "?" and
 			"[a-z]":
 			   :help z?	jump to help for any "z" command
 			   :help z.	jump to the help for "z."
-			But when a tag exists it is taken literally:
-			   :help :?	jump to help for ":?"
-
 			If there is no full match for the pattern, or there
 			are several matches, the "best" match will be used.
 			A sophisticated algorithm is used to decide which
@@ -74,19 +68,18 @@ Help on help files					*helphelp*
 			example to find help for CTRL-V in Insert mode: >
 				:help i^V
 <
-			It is also possible to first do ":help" and then
+			To use a regexp |pattern|, first do ":help" and then
 			use ":tag {pattern}" in the help window.  The
 			":tnext" command can then be used to jump to other
 			matches, "tselect" to list matches and choose one. >
-				:help index
-				:tselect /.*mode
+				:help index| :tse z.
 
 <			When there is no argument you will see matches for
 			"help", to avoid listing all possible matches (that
 			would be very slow).
 			The number of matches displayed is limited to 300.
 
-			The `:help` command can be followed by '|' and another
+			This command can be followed by '|' and another
 			command, but you don't need to escape the '|' inside a
 			help command.  So these both work: >
 				:help |
@@ -142,8 +135,7 @@ Help on help files					*helphelp*
 			already opened, then the location list for that window
 			is used.  Otherwise, a new help window is opened and
 			the location list for that window is set.  The
-			location list for the current window is not changed
-			then.
+			location list for the current window is not changed.
 
 							*:exu* *:exusage*
 :exu[sage]		Show help on Ex commands.  Added to simulate the Nvi
@@ -315,7 +307,7 @@ the applicable Vim version.  The last field specifies the last modification
 date of the file.  Each field is separated by a tab.
 
 At the bottom of the help file, place a Vim modeline to set the 'textwidth'
-and 'tabstop' options and the 'filetype' to "help".  Never set a global option
+and 'tabstop' options and the 'filetype' to 'help'.  Never set a global option
 in such a modeline, that can have consequences undesired by whoever reads that
 help.
 

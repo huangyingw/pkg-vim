@@ -1425,7 +1425,7 @@ nfa_regatom(void)
 		    EMSG(_(e_nopresub));
 		    return FAIL;
 		}
-		for (lp = reg_prev_sub; *lp != NUL; MB_CPTR_ADV(lp))
+		for (lp = reg_prev_sub; *lp != NUL; mb_cptr_adv(lp))
 		{
 		    EMIT(PTR2CHAR(lp));
 		    if (lp != reg_prev_sub)
@@ -1672,7 +1672,7 @@ collection:
 		    else
 			EMIT(result);
 		    regparse = endp;
-		    MB_PTR_ADV(regparse);
+		    mb_ptr_adv(regparse);
 		    return OK;
 		}
 		/*
@@ -1684,7 +1684,7 @@ collection:
 		if (*regparse == '^')			/* negated range */
 		{
 		    negated = TRUE;
-		    MB_PTR_ADV(regparse);
+		    mb_ptr_adv(regparse);
 		    EMIT(NFA_START_NEG_COLL);
 		}
 		else
@@ -1694,7 +1694,7 @@ collection:
 		    startc = '-';
 		    EMIT(startc);
 		    EMIT(NFA_CONCAT);
-		    MB_PTR_ADV(regparse);
+		    mb_ptr_adv(regparse);
 		}
 		/* Emit the OR branches for each character in the [] */
 		emit_range = FALSE;
@@ -1797,7 +1797,7 @@ collection:
 		    {
 			emit_range = TRUE;
 			startc = oldstartc;
-			MB_PTR_ADV(regparse);
+			mb_ptr_adv(regparse);
 			continue;	    /* reading the end of the range */
 		    }
 
@@ -1817,7 +1817,7 @@ collection:
 			    )
 			)
 		    {
-			MB_PTR_ADV(regparse);
+			mb_ptr_adv(regparse);
 
 			if (*regparse == 'n')
 			    startc = reg_string ? NL : NFA_NEWL;
@@ -1832,7 +1832,7 @@ collection:
 				/* TODO(RE) This needs more testing */
 				startc = coll_get_char();
 				got_coll_char = TRUE;
-				MB_PTR_BACK(old_regparse, regparse);
+				mb_ptr_back(old_regparse, regparse);
 			    }
 			    else
 			    {
@@ -1932,10 +1932,10 @@ collection:
 			}
 		    }
 
-		    MB_PTR_ADV(regparse);
+		    mb_ptr_adv(regparse);
 		} /* while (p < endp) */
 
-		MB_PTR_BACK(old_regparse, regparse);
+		mb_ptr_back(old_regparse, regparse);
 		if (*regparse == '-')	    /* if last, '-' is just a char */
 		{
 		    EMIT('-');
@@ -1944,7 +1944,7 @@ collection:
 
 		/* skip the trailing ] */
 		regparse = endp;
-		MB_PTR_ADV(regparse);
+		mb_ptr_adv(regparse);
 
 		/* Mark end of the collection. */
 		if (negated == TRUE)
@@ -1974,7 +1974,7 @@ collection:
 nfa_do_multibyte:
 		/* plen is length of current char with composing chars */
 		if (enc_utf8 && ((*mb_char2len)(c)
-			    != (plen = utfc_ptr2len(old_regparse))
+			    != (plen = (*mb_ptr2len)(old_regparse))
 						       || utf_iscomposing(c)))
 		{
 		    int i = 0;
@@ -4871,7 +4871,7 @@ check_char_class(int class, int c)
 		return OK;
 	    break;
 	case NFA_CLASS_CNTRL:
-	    if (c >= 1 && c <= 127 && iscntrl(c))
+	    if (c >= 1 && c <= 255 && iscntrl(c))
 		return OK;
 	    break;
 	case NFA_CLASS_DIGIT:
@@ -4879,7 +4879,7 @@ check_char_class(int class, int c)
 		return OK;
 	    break;
 	case NFA_CLASS_GRAPH:
-	    if (c >= 1 && c <= 127 && isgraph(c))
+	    if (c >= 1 && c <= 255 && isgraph(c))
 		return OK;
 	    break;
 	case NFA_CLASS_LOWER:
@@ -6351,12 +6351,12 @@ nfa_regmatch(
 		break;
 
 	    case NFA_WHITE:	/*  \s	*/
-		result = VIM_ISWHITE(curc);
+		result = vim_iswhite(curc);
 		ADD_STATE_IF_MATCH(t->state);
 		break;
 
 	    case NFA_NWHITE:	/*  \S	*/
-		result = curc != NUL && !VIM_ISWHITE(curc);
+		result = curc != NUL && !vim_iswhite(curc);
 		ADD_STATE_IF_MATCH(t->state);
 		break;
 

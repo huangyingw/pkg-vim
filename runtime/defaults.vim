@@ -1,7 +1,7 @@
 " The default vimrc file.
 "
 " Maintainer:	Bram Moolenaar <Bram@vim.org>
-" Last change:	2017 Apr 01
+" Last change:	2016 Sep 02
 "
 " This is loaded if no vimrc file was found.
 " Except when Vim is run with "-u NONE" or "-C".
@@ -21,20 +21,7 @@ endif
 
 " Use Vim settings, rather than Vi settings (much better!).
 " This must be first, because it changes other options as a side effect.
-" Avoid side effects when it was already reset.
-if &compatible
-  set nocompatible
-endif
-
-" When the +eval feature is missing, the set command above will be skipped.
-" Use a trick to reset compatible only when the +eval feature is missing.
-if 1
-  nnoremap : :"
-endif
-silent normal :set nocompatible
-if 1
-  nunmap :
-endif
+set nocompatible
 
 " Allow backspacing over everything in insert mode.
 set backspace=indent,eol,start
@@ -76,12 +63,6 @@ map Q gq
 " so that you can undo CTRL-U after inserting a line break.
 " Revert with ":iunmap <C-U>".
 inoremap <C-U> <C-G>u<C-U>
-
-" In many terminal emulators the mouse works just fine.  By enabling it you
-" can position the cursor, Visually select and scroll with the mouse.
-if has('mouse')
-  set mouse=a
-endif
 
 " Switch syntax highlighting on when the terminal has colors or when using the
 " GUI (which always has colors).

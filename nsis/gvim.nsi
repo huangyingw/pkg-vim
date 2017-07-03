@@ -385,7 +385,6 @@ SectionEnd
 		File ${VIMRT}\libintl-8.dll
 		File ${VIMRT}\libiconv-2.dll
 		File /nonfatal ${VIMRT}\libwinpthread-1.dll
-		File /nonfatal ${VIMRT}\libgcc_s_sjlj-1.dll
 	SectionEnd
 !endif
 

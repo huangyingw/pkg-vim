@@ -51,6 +51,9 @@
 # ifdef _
 #  undef _
 # endif
+# ifdef ngettext
+#  undef ngettext
+# endif
 # ifdef N_
 #  undef N_
 # endif
@@ -1519,7 +1522,7 @@ split_button_string(char_u *button_string, int *n_buttons)
 	    else if (*p == DLG_HOTKEY_CHAR)
 		*p++ = '_';
 	    else
-		MB_PTR_ADV(p);
+		mb_ptr_adv(p);
 	}
 	array[count] = NULL; /* currently not relied upon, but doesn't hurt */
     }
