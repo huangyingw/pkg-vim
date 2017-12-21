@@ -1,6 +1,6 @@
-[remote "origin"]
+[remote "anonscm"]
     url = https://anonscm.debian.org/cgit/pkg-vim/vim.git/
-    fetch = +refs/heads/*:refs/remotes/origin/*
+    fetch = +refs/heads/*:refs/remotes/anonscm/*
 [remote "github"]
     url = git@github.com:huangyingw/pkg-vim.git
     fetch = +refs/heads/*:refs/remotes/github/*
@@ -11,5 +11,5 @@
     remote = github
     remote = bitbucket
 [gsync]
-    remote = origin
+    remote = anonscm
     branch = master
