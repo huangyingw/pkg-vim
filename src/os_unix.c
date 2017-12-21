@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4:
+/* vi:set ts=8 sts=4 sw=4 noet:
  *
  * VIM - Vi IMproved	by Bram Moolenaar
  *	      OS/2 port by Paul Slootman
@@ -175,12 +175,12 @@ typedef int waitstatus;
 #endif
 static pid_t wait4pid(pid_t, waitstatus *);
 
-static int  WaitForChar(long);
-static int  WaitForCharOrMouse(long, int *break_loop);
+static int  WaitForChar(long msec, int *interrupted, int ignore_input);
+static int  WaitForCharOrMouse(long msec, int *interrupted, int ignore_input);
 #if defined(__BEOS__) || defined(VMS)
-int  RealWaitForChar(int, long, int *, int *break_loop);
+int  RealWaitForChar(int, long, int *, int *interrupted);
 #else
-static int  RealWaitForChar(int, long, int *, int *break_loop);
+static int  RealWaitForChar(int, long, int *, int *interrupted);
 #endif
 
 #ifdef FEAT_XCLIPBOARD
@@ -211,14 +211,19 @@ static RETSIGTYPE deathtrap SIGPROTOARG;
 static void catch_int_signal(void);
 static void set_signals(void);
 static void catch_signals(RETSIGTYPE (*func_deadly)(), RETSIGTYPE (*func_other)());
-#ifndef __EMX__
+#ifdef HAVE_SIGPROCMASK
+# define SIGSET_DECL(set)	sigset_t set;
+# define BLOCK_SIGNALS(set)	block_signals(set)
+# define UNBLOCK_SIGNALS(set)	unblock_signals(set)
+#else
+# define SIGSET_DECL(set)
+# define BLOCK_SIGNALS(set)	do { /**/ } while (0)
+# define UNBLOCK_SIGNALS(set)	do { /**/ } while (0)
+#endif
 static int  have_wildcard(int, char_u **);
 static int  have_dollars(int, char_u **);
-#endif
 
-#ifndef __EMX__
 static int save_patterns(int num_pat, char_u **pat, int *num_file, char_u ***file);
-#endif
 
 #ifndef SIG_ERR
 # define SIG_ERR	((RETSIGTYPE (*)())-1)
@@ -226,14 +231,16 @@ static int save_patterns(int num_pat, char_u **pat, int *num_file, char_u ***fil
 
 /* volatile because it is used in signal handler sig_winch(). */
 static volatile int do_resize = FALSE;
-#ifndef __EMX__
 static char_u	*extra_shell_arg = NULL;
 static int	show_shell_mess = TRUE;
-#endif
 /* volatile because it is used in signal handler deathtrap(). */
 static volatile int deadly_signal = 0;	    /* The signal we caught */
 /* volatile because it is used in signal handler deathtrap(). */
 static volatile int in_mch_delay = FALSE;    /* sleeping in mch_delay() */
+
+#if defined(FEAT_JOB_CHANNEL) && !defined(USE_SYSTEM)
+static int dont_check_job_ended = 0;
+#endif
 
 static int curr_tmode = TMODE_COOK;	/* contains current terminal mode */
 
@@ -258,7 +265,7 @@ static xsmp_config_T xsmp;
  * that describe the signals. That is nearly what we want here.  But
  * autoconf does only check for sys_siglist (without the underscore), I
  * do not want to change everything today.... jw.
- * This is why AC_DECL_SYS_SIGLIST is commented out in configure.in
+ * This is why AC_DECL_SYS_SIGLIST is commented out in configure.ac.
  */
 #endif
 
@@ -358,6 +365,11 @@ mch_chdir(char *path)
 # endif
 }
 
+/* Why is NeXT excluded here (and not in os_unixx.h)? */
+#if defined(ECHOE) && defined(ICANON) && (defined(HAVE_TERMIO_H) || defined(HAVE_TERMIOS_H)) && !defined(__NeXT__)
+# define NEW_TTY_SYSTEM
+#endif
+
 /*
  * Write s[len] to the screen.
  */
@@ -385,93 +397,135 @@ mch_inchar(
     int		tb_change_cnt)
 {
     int		len;
+    int		interrupted = FALSE;
+    int		did_start_blocking = FALSE;
+    long	wait_time;
+    long	elapsed_time = 0;
+#ifdef ELAPSED_FUNC
+    ELAPSED_TYPE start_tv;
 
-#ifdef MESSAGE_QUEUE
-    parse_queued_messages();
+    ELAPSED_INIT(start_tv);
 #endif
 
-    /* Check if window changed size while we were busy, perhaps the ":set
-     * columns=99" command was used. */
-    while (do_resize)
-	handle_resize();
-
-    if (wtime >= 0)
+    /* repeat until we got a character or waited long enough */
+    for (;;)
     {
-	while (WaitForChar(wtime) == 0)		/* no character available */
-	{
-	    if (do_resize)
-		handle_resize();
-#ifdef FEAT_CLIENTSERVER
-	    else if (!server_waiting())
-#else
-	    else
-#endif
-		/* return if not interrupted by resize or server */
-		return 0;
-#ifdef MESSAGE_QUEUE
-	    parse_queued_messages();
-#endif
-	}
-    }
-    else	/* wtime == -1 */
-    {
-	/*
-	 * If there is no character available within 'updatetime' seconds
-	 * flush all the swap files to disk.
-	 * Also done when interrupted by SIGWINCH.
-	 */
-	if (WaitForChar(p_ut) == 0)
-	{
-#ifdef FEAT_AUTOCMD
-	    if (trigger_cursorhold() && maxlen >= 3
-					   && !typebuf_changed(tb_change_cnt))
-	    {
-		buf[0] = K_SPECIAL;
-		buf[1] = KS_EXTRA;
-		buf[2] = (int)KE_CURSORHOLD;
-		return 3;
-	    }
-#endif
-	    before_blocking();
-	}
-    }
-
-    for (;;)	/* repeat until we got a character */
-    {
-	while (do_resize)    /* window changed size */
+	/* Check if window changed size while we were busy, perhaps the ":set
+	 * columns=99" command was used. */
+	while (do_resize)
 	    handle_resize();
 
 #ifdef MESSAGE_QUEUE
 	parse_queued_messages();
+	/* If input was put directly in typeahead buffer bail out here. */
+	if (typebuf_changed(tb_change_cnt))
+	    return 0;
 #endif
+	if (wtime < 0 && did_start_blocking)
+	    /* blocking and already waited for p_ut */
+	    wait_time = -1;
+	else
+	{
+	    if (wtime >= 0)
+		wait_time = wtime;
+	    else
+		/* going to block after p_ut */
+		wait_time = p_ut;
+#ifdef ELAPSED_FUNC
+	    elapsed_time = ELAPSED_FUNC(start_tv);
+#endif
+	    wait_time -= elapsed_time;
+	    if (wait_time < 0)
+	    {
+		if (wtime >= 0)
+		    /* no character available within "wtime" */
+		    return 0;
+
+		if (wtime < 0)
+		{
+		    /* no character available within 'updatetime' */
+		    did_start_blocking = TRUE;
+#ifdef FEAT_AUTOCMD
+		    if (trigger_cursorhold() && maxlen >= 3
+					    && !typebuf_changed(tb_change_cnt))
+		    {
+			buf[0] = K_SPECIAL;
+			buf[1] = KS_EXTRA;
+			buf[2] = (int)KE_CURSORHOLD;
+			return 3;
+		    }
+#endif
+		    /*
+		     * If there is no character available within 'updatetime'
+		     * seconds flush all the swap files to disk.
+		     * Also done when interrupted by SIGWINCH.
+		     */
+		    before_blocking();
+		    continue;
+		}
+	    }
+	}
+
+#ifdef FEAT_JOB_CHANNEL
+	/* Checking if a job ended requires polling.  Do this every 100 msec. */
+	if (has_pending_job() && (wait_time < 0 || wait_time > 100L))
+	    wait_time = 100L;
+	/* If there is readahead then parse_queued_messages() timed out and we
+	 * should call it again soon. */
+	if ((wait_time < 0 || wait_time > 100L) && channel_any_readahead())
+	    wait_time = 10L;
+#endif
+#ifdef FEAT_BEVAL_GUI
+	if (p_beval && wait_time > 100L)
+	    /* The 'balloonexpr' may indirectly invoke a callback while waiting
+	     * for a character, need to check often. */
+	    wait_time = 100L;
+#endif
+
 	/*
 	 * We want to be interrupted by the winch signal
 	 * or by an event on the monitored file descriptors.
 	 */
-	if (WaitForChar(-1L) == 0)
+	if (WaitForChar(wait_time, &interrupted, FALSE))
 	{
-	    if (do_resize)	    /* interrupted by SIGWINCH signal */
-		handle_resize();
-	    return 0;
+	    /* If input was put directly in typeahead buffer bail out here. */
+	    if (typebuf_changed(tb_change_cnt))
+		return 0;
+
+	    /*
+	     * For some terminals we only get one character at a time.
+	     * We want the get all available characters, so we could keep on
+	     * trying until none is available
+	     * For some other terminals this is quite slow, that's why we don't
+	     * do it.
+	     */
+	    len = read_from_input_buf(buf, (long)maxlen);
+	    if (len > 0)
+		return len;
+	    continue;
 	}
 
-	/* If input was put directly in typeahead buffer bail out here. */
-	if (typebuf_changed(tb_change_cnt))
-	    return 0;
+	/* no character available */
+#if !(defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H))
+	/* estimate the elapsed time */
+	elapsed_time += wait_time;
+#endif
 
-	/*
-	 * For some terminals we only get one character at a time.
-	 * We want the get all available characters, so we could keep on
-	 * trying until none is available
-	 * For some other terminals this is quite slow, that's why we don't do
-	 * it.
-	 */
-	len = read_from_input_buf(buf, (long)maxlen);
-	if (len > 0)
-	{
-	    return len;
-	}
+	if (do_resize	    /* interrupted by SIGWINCH signal */
+#ifdef FEAT_CLIENTSERVER
+		|| server_waiting()
+#endif
+#ifdef MESSAGE_QUEUE
+		|| interrupted
+#endif
+		|| wait_time > 0
+		|| (wtime < 0 && !did_start_blocking))
+	    continue;
+
+	/* no character available or interrupted */
+	break;
     }
+    return 0;
 }
 
     static void
@@ -482,13 +536,24 @@ handle_resize(void)
 }
 
 /*
- * return non-zero if a character is available
+ * Return non-zero if a character is available.
  */
     int
 mch_char_avail(void)
 {
-    return WaitForChar(0L);
+    return WaitForChar(0L, NULL, FALSE);
 }
+
+#if defined(FEAT_TERMINAL) || defined(PROTO)
+/*
+ * Check for any pending input or messages.
+ */
+    int
+mch_check_messages(void)
+{
+    return WaitForChar(0L, NULL, TRUE);
+}
+#endif
 
 #if defined(HAVE_TOTAL_MEM) || defined(PROTO)
 # ifdef HAVE_SYS_RESOURCE_H
@@ -508,13 +573,10 @@ mch_char_avail(void)
     long_u
 mch_total_mem(int special UNUSED)
 {
-# ifdef __EMX__
-    return ulimit(3, 0L) >> 10;   /* always 32MB? */
-# else
     long_u	mem = 0;
     long_u	shiftright = 10;  /* how much to shift "mem" right for Kbyte */
 
-#  ifdef HAVE_SYSCTL
+# ifdef HAVE_SYSCTL
     int		mib[2], physmem;
     size_t	len;
 
@@ -524,9 +586,9 @@ mch_total_mem(int special UNUSED)
     len = sizeof(physmem);
     if (sysctl(mib, 2, &physmem, &len, NULL, 0) == 0)
 	mem = (long_u)physmem;
-#  endif
+# endif
 
-#  if defined(HAVE_SYS_SYSINFO_H) && defined(HAVE_SYSINFO)
+# if defined(HAVE_SYS_SYSINFO_H) && defined(HAVE_SYSINFO)
     if (mem == 0)
     {
 	struct sysinfo sinfo;
@@ -534,7 +596,7 @@ mch_total_mem(int special UNUSED)
 	/* Linux way of getting amount of RAM available */
 	if (sysinfo(&sinfo) == 0)
 	{
-#   ifdef HAVE_SYSINFO_MEM_UNIT
+#  ifdef HAVE_SYSINFO_MEM_UNIT
 	    /* avoid overflow as much as possible */
 	    while (shiftright > 0 && (sinfo.mem_unit & 1) == 0)
 	    {
@@ -542,14 +604,14 @@ mch_total_mem(int special UNUSED)
 		--shiftright;
 	    }
 	    mem = sinfo.totalram * sinfo.mem_unit;
-#   else
+#  else
 	    mem = sinfo.totalram;
-#   endif
+#  endif
 	}
     }
-#  endif
+# endif
 
-#  ifdef HAVE_SYSCONF
+# ifdef HAVE_SYSCONF
     if (mem == 0)
     {
 	long	    pagesize, pagecount;
@@ -568,19 +630,19 @@ mch_total_mem(int special UNUSED)
 	    mem = (long_u)pagesize * pagecount;
 	}
     }
-#  endif
+# endif
 
     /* Return the minimum of the physical memory and the user limit, because
      * using more than the user limit may cause Vim to be terminated. */
-#  if defined(HAVE_SYS_RESOURCE_H) && defined(HAVE_GETRLIMIT)
+# if defined(HAVE_SYS_RESOURCE_H) && defined(HAVE_GETRLIMIT)
     {
 	struct rlimit	rlp;
 
 	if (getrlimit(RLIMIT_DATA, &rlp) == 0
 		&& rlp.rlim_cur < ((rlim_t)1 << (sizeof(long_u) * 8 - 1))
-#   ifdef RLIM_INFINITY
+#  ifdef RLIM_INFINITY
 		&& rlp.rlim_cur != RLIM_INFINITY
-#   endif
+#  endif
 		&& ((long_u)rlp.rlim_cur >> 10) < (mem >> shiftright)
 	   )
 	{
@@ -588,12 +650,11 @@ mch_total_mem(int special UNUSED)
 	    shiftright = 10;
 	}
     }
-#  endif
+# endif
 
     if (mem > 0)
 	return mem >> shiftright;
     return (long_u)0x1fffff;
-# endif
 }
 #endif
 
@@ -650,9 +711,6 @@ mch_delay(long msec, int ignoreinput)
 #  ifndef HAVE_SELECT
 	poll(NULL, 0, (int)msec);
 #  else
-#   ifdef __EMX__
-	_sleep2(msec);
-#   else
 	{
 	    struct timeval tv;
 
@@ -664,7 +722,6 @@ mch_delay(long msec, int ignoreinput)
 	     */
 	    select(0, NULL, NULL, NULL, &tv);
 	}
-#   endif /* __EMX__ */
 #  endif /* HAVE_SELECT */
 # endif /* HAVE_NANOSLEEP */
 #endif /* HAVE_USLEEP */
@@ -677,7 +734,7 @@ mch_delay(long msec, int ignoreinput)
 	in_mch_delay = FALSE;
     }
     else
-	WaitForChar(msec);
+	WaitForChar(msec, NULL, FALSE);
 }
 
 #if defined(HAVE_STACK_LIMIT) \
@@ -799,10 +856,6 @@ mch_stackcheck(char *p)
  * completely full.
  */
 
-#if defined(HAVE_AVAILABILITYMACROS_H)
-# include <AvailabilityMacros.h>
-#endif
-
 #ifndef SIGSTKSZ
 # define SIGSTKSZ 8000    /* just a guess of how much stack is needed... */
 #endif
@@ -822,13 +875,6 @@ init_signal_stack(void)
     if (signal_stack != NULL)
     {
 # ifdef HAVE_SIGALTSTACK
-#  if defined(__APPLE__) && (!defined(MAC_OS_X_VERSION_MAX_ALLOWED) \
-		|| MAC_OS_X_VERSION_MAX_ALLOWED <= 1040)
-	/* missing prototype.  Adding it to osdef?.h.in doesn't work, because
-	 * "struct sigaltstack" needs to be declared. */
-	extern int sigaltstack(const struct sigaltstack *ss, struct sigaltstack *oss);
-#  endif
-
 #  ifdef HAVE_SS_BASE
 	sigstk.ss_base = signal_stack;
 #  else
@@ -1028,6 +1074,12 @@ deathtrap SIGDEFARG(sigarg)
     /* Remember how often we have been called. */
     ++entered;
 
+#ifdef FEAT_AUTOCMD
+    /* Executing autocommands is likely to use more stack space than we have
+     * available in the signal stack. */
+    block_autocmds();
+#endif
+
 #ifdef FEAT_EVAL
     /* Set the v:dying variable. */
     set_vim_var_nr(VV_DYING, (long)entered);
@@ -1108,6 +1160,8 @@ deathtrap SIGDEFARG(sigarg)
     /* Preserve files and exit.  This sets the really_exiting flag to prevent
      * calling free(). */
     preserve_exit();
+
+    /* NOTREACHED */
 
 #ifdef NBDEBUG
     reset_signals();
@@ -1412,6 +1466,33 @@ catch_signals(
 	    signal(signal_info[i].sig, func_other);
 }
 
+#ifdef HAVE_SIGPROCMASK
+    static void
+block_signals(sigset_t *set)
+{
+    sigset_t	newset;
+    int		i;
+
+    sigemptyset(&newset);
+
+    for (i = 0; signal_info[i].sig != -1; i++)
+	sigaddset(&newset, signal_info[i].sig);
+
+# if defined(_REENTRANT) && defined(SIGCONT)
+    /* SIGCONT isn't in the list, because its default action is ignore */
+    sigaddset(&newset, SIGCONT);
+# endif
+
+    sigprocmask(SIG_BLOCK, &newset, set);
+}
+
+    static void
+unblock_signals(sigset_t *set)
+{
+    sigprocmask(SIG_SETMASK, set, NULL);
+}
+#endif
+
 /*
  * Handling of SIGHUP, SIGQUIT and SIGTERM:
  * "when" == a signal:       when busy, postpone and return FALSE, otherwise
@@ -1476,25 +1557,16 @@ mch_input_isatty(void)
 
 #ifdef FEAT_X11
 
-# if defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H) \
+# if defined(ELAPSED_TIMEVAL) \
 	&& (defined(FEAT_XCLIPBOARD) || defined(FEAT_TITLE))
-
-static void xopen_message(struct timeval *tvp);
 
 /*
  * Give a message about the elapsed time for opening the X window.
  */
     static void
-xopen_message(
-    struct timeval *tvp)	/* must contain start time */
+xopen_message(long elapsed_msec)
 {
-    struct timeval  end_tv;
-
-    /* Compute elapsed time. */
-    gettimeofday(&end_tv, NULL);
-    smsg((char_u *)_("Opening the X display took %ld msec"),
-	    (end_tv.tv_sec - tvp->tv_sec) * 1000L
-				   + (end_tv.tv_usec - tvp->tv_usec) / 1000L);
+    smsg((char_u *)_("Opening the X display took %ld msec"), elapsed_msec);
 }
 # endif
 #endif
@@ -1793,11 +1865,11 @@ get_x11_windis(void)
 #endif
 	if (x11_display != NULL)
 	{
-# if defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
+# ifdef ELAPSED_FUNC
 	    if (p_verbose > 0)
 	    {
 		verbose_enter();
-		xopen_message(&start_tv);
+		xopen_message(ELAPSED_FUNC(start_tv));
 		verbose_leave();
 	    }
 # endif
@@ -2197,6 +2269,7 @@ vim_is_xterm(char_u *name)
 		|| STRNICMP(name, "kterm", 5) == 0
 		|| STRNICMP(name, "mlterm", 6) == 0
 		|| STRNICMP(name, "rxvt", 4) == 0
+		|| STRNICMP(name, "screen.xterm", 12) == 0
 		|| STRCMP(name, "builtin_xterm") == 0);
 }
 
@@ -2210,7 +2283,12 @@ vim_is_xterm(char_u *name)
 use_xterm_like_mouse(char_u *name)
 {
     return (name != NULL
-	    && (term_is_xterm || STRNICMP(name, "screen", 6) == 0));
+	    && (term_is_xterm
+		|| STRNICMP(name, "screen", 6) == 0
+		|| STRNICMP(name, "tmux", 4) == 0
+		|| STRICMP(name, "st") == 0
+		|| STRNICMP(name, "st-", 3) == 0
+		|| STRNICMP(name, "stterm", 6) == 0));
 }
 #endif
 
@@ -2271,6 +2349,7 @@ vim_is_fastterm(char_u *name)
     return (   STRNICMP(name, "hpterm", 6) == 0
 	    || STRNICMP(name, "sun-cmd", 7) == 0
 	    || STRNICMP(name, "screen", 6) == 0
+	    || STRNICMP(name, "tmux", 4) == 0
 	    || STRNICMP(name, "dtterm", 6) == 0);
 }
 
@@ -2545,17 +2624,13 @@ mch_FullName(
     int
 mch_isFullName(char_u *fname)
 {
-#ifdef __EMX__
-    return _fnisabs(fname);
-#else
-# ifdef VMS
+#ifdef VMS
     return ( fname[0] == '/'	       || fname[0] == '.'	    ||
 	     strchr((char *)fname,':') || strchr((char *)fname,'"') ||
 	    (strchr((char *)fname,'[') && strchr((char *)fname,']'))||
 	    (strchr((char *)fname,'<') && strchr((char *)fname,'>'))   );
-# else
+#else
     return (*fname == '/' || *fname == '~');
-# endif
 #endif
 }
 
@@ -2575,7 +2650,7 @@ fname_case(
     DIR		*dirp;
     struct dirent *dp;
 
-    if (lstat((char *)name, &st) >= 0)
+    if (mch_lstat((char *)name, &st) >= 0)
     {
 	/* Open the directory where the file is located. */
 	slash = vim_strrchr(name, '/');
@@ -2608,7 +2683,7 @@ fname_case(
 		    vim_strncpy(newname, name, MAXPATHL);
 		    vim_strncpy(newname + (tail - name), (char_u *)dp->d_name,
 						    MAXPATHL - (tail - name));
-		    if (lstat((char *)newname, &st2) >= 0
+		    if (mch_lstat((char *)newname, &st2) >= 0
 			    && st.st_ino == st2.st_ino
 			    && st.st_dev == st2.st_dev)
 		    {
@@ -2650,9 +2725,8 @@ mch_getperm(char_u *name)
 }
 
 /*
- * set file permission for 'name' to 'perm'
- *
- * return FAIL for failure, OK otherwise
+ * Set file permission for "name" to "perm".
+ * Return FAIL for failure, OK otherwise.
  */
     int
 mch_setperm(char_u *name, long perm)
@@ -2665,6 +2739,18 @@ mch_setperm(char_u *name, long perm)
 #endif
 		    (mode_t)perm) == 0 ? OK : FAIL);
 }
+
+#if defined(HAVE_FCHMOD) || defined(PROTO)
+/*
+ * Set file permission for open file "fd" to "perm".
+ * Return FAIL for failure, OK otherwise.
+ */
+    int
+mch_fsetperm(int fd, long perm)
+{
+    return (fchmod(fd, (mode_t)perm) == 0 ? OK : FAIL);
+}
+#endif
 
 #if defined(HAVE_ACL) || defined(PROTO)
 # ifdef HAVE_SYS_ACL_H
@@ -2971,7 +3057,7 @@ mch_isrealdir(char_u *name)
 
     if (*name == NUL)	    /* Some stat()s don't flag "" as an error. */
 	return FALSE;
-    if (lstat((char *)name, &statb))
+    if (mch_lstat((char *)name, &statb))
 	return FALSE;
 #ifdef _POSIX_SOURCE
     return (S_ISDIR(statb.st_mode) ? TRUE : FALSE);
@@ -3015,7 +3101,7 @@ executable_file(char_u *name)
 }
 
 /*
- * Return 1 if "name" can be found in $PATH and executed, 0 if not.
+ * Return TRUE if "name" can be found in $PATH and executed, FALSE if not.
  * If "use_path" is FALSE only check if "name" is executable.
  * Return -1 if unknown.
  */
@@ -3037,7 +3123,7 @@ mch_can_exe(char_u *name, char_u **path, int use_path)
 	{
 	    if (path != NULL)
 	    {
-		if (name[0] == '.')
+		if (name[0] != '/')
 		    *path = FullName_save(name, TRUE);
 		else
 		    *path = vim_strsave(name);
@@ -3076,7 +3162,7 @@ mch_can_exe(char_u *name, char_u **path, int use_path)
 	{
 	    if (path != NULL)
 	    {
-		if (buf[0] == '.')
+		if (buf[0] != '/')
 		    *path = FullName_save(buf, TRUE);
 		else
 		    *path = vim_strsave(buf);
@@ -3305,11 +3391,7 @@ mch_settmode(int tmode)
 {
     static int first = TRUE;
 
-    /* Why is NeXT excluded here (and not in os_unixx.h)? */
-#if defined(ECHOE) && defined(ICANON) && (defined(HAVE_TERMIO_H) || defined(HAVE_TERMIOS_H)) && !defined(__NeXT__)
-    /*
-     * for "new" tty systems
-     */
+#ifdef NEW_TTY_SYSTEM
 # ifdef HAVE_TERMIOS_H
     static struct termios told;
 	   struct termios tnew;
@@ -3348,7 +3430,13 @@ mch_settmode(int tmode)
 	tnew.c_cc[VTIME] = 0;		/* don't wait */
     }
     else if (tmode == TMODE_SLEEP)
-	tnew.c_lflag &= ~(ECHO);
+    {
+	/* Also reset ICANON here, otherwise on Solaris select() won't see
+	 * typeahead characters. */
+	tnew.c_lflag &= ~(ICANON | ECHO);
+	tnew.c_cc[VMIN] = 1;		/* return after 1 char */
+	tnew.c_cc[VTIME] = 0;		/* don't wait */
+    }
 
 # if defined(HAVE_TERMIOS_H)
     {
@@ -3365,7 +3453,6 @@ mch_settmode(int tmode)
 # endif
 
 #else
-
     /*
      * for "old" tty systems
      */
@@ -3406,63 +3493,96 @@ mch_settmode(int tmode)
     void
 get_stty(void)
 {
-    char_u  buf[2];
-    char_u  *p;
+    ttyinfo_T	info;
+    char_u	buf[2];
+    char_u	*p;
 
-    /* Why is NeXT excluded here (and not in os_unixx.h)? */
-#if defined(ECHOE) && defined(ICANON) && (defined(HAVE_TERMIO_H) || defined(HAVE_TERMIOS_H)) && !defined(__NeXT__)
-    /* for "new" tty systems */
+    if (get_tty_info(read_cmd_fd, &info) == OK)
+    {
+	intr_char = info.interrupt;
+	buf[0] = info.backspace;
+	buf[1] = NUL;
+	add_termcode((char_u *)"kb", buf, FALSE);
+
+	/* If <BS> and <DEL> are now the same, redefine <DEL>. */
+	p = find_termcode((char_u *)"kD");
+	if (p != NULL && p[0] == buf[0] && p[1] == buf[1])
+	    do_fixdel(NULL);
+    }
+}
+
+/*
+ * Obtain the characters that Backspace and Enter produce on "fd".
+ * Returns OK or FAIL.
+ */
+    int
+get_tty_info(int fd, ttyinfo_T *info)
+{
+#ifdef NEW_TTY_SYSTEM
 # ifdef HAVE_TERMIOS_H
     struct termios keys;
 # else
     struct termio keys;
 # endif
 
+    if (
 # if defined(HAVE_TERMIOS_H)
-    if (tcgetattr(read_cmd_fd, &keys) != -1)
+	    tcgetattr(fd, &keys) != -1
 # else
-    if (ioctl(read_cmd_fd, TCGETA, &keys) != -1)
+	    ioctl(fd, TCGETA, &keys) != -1
 # endif
+       )
     {
-	buf[0] = keys.c_cc[VERASE];
-	intr_char = keys.c_cc[VINTR];
+	info->backspace = keys.c_cc[VERASE];
+	info->interrupt = keys.c_cc[VINTR];
+	if (keys.c_iflag & ICRNL)
+	    info->enter = NL;
+	else
+	    info->enter = CAR;
+	if (keys.c_oflag & ONLCR)
+	    info->nl_does_cr = TRUE;
+	else
+	    info->nl_does_cr = FALSE;
+	return OK;
+    }
 #else
     /* for "old" tty systems */
     struct sgttyb keys;
 
-    if (ioctl(read_cmd_fd, TIOCGETP, &keys) != -1)
+    if (ioctl(fd, TIOCGETP, &keys) != -1)
     {
-	buf[0] = keys.sg_erase;
-	intr_char = keys.sg_kill;
-#endif
-	buf[1] = NUL;
-	add_termcode((char_u *)"kb", buf, FALSE);
-
-	/*
-	 * If <BS> and <DEL> are now the same, redefine <DEL>.
-	 */
-	p = find_termcode((char_u *)"kD");
-	if (p != NULL && p[0] == buf[0] && p[1] == buf[1])
-	    do_fixdel(NULL);
+	info->backspace = keys.sg_erase;
+	info->interrupt = keys.sg_kill;
+	info->enter = CAR;
+	info->nl_does_cr = TRUE;
+	return OK;
     }
-#if 0
-    }	    /* to keep cindent happy */
 #endif
+    return FAIL;
 }
 
 #endif /* VMS  */
 
 #if defined(FEAT_MOUSE_TTY) || defined(PROTO)
+static int	mouse_ison = FALSE;
+
 /*
  * Set mouse clicks on or off.
  */
     void
 mch_setmouse(int on)
 {
-    static int	ison = FALSE;
+# ifdef FEAT_BEVAL_TERM
+    static int	bevalterm_ison = FALSE;
+# endif
     int		xterm_mouse_vers;
 
-    if (on == ison)	/* return quickly if nothing to do */
+    if (on == mouse_ison
+# ifdef FEAT_BEVAL_TERM
+	    && p_bevalterm == bevalterm_ison
+# endif
+	    )
+	/* return quickly if nothing to do */
 	return;
 
     xterm_mouse_vers = use_xterm_mouse();
@@ -3474,18 +3594,30 @@ mch_setmouse(int on)
 		   (on
 		   ? IF_EB("\033[?1015h", ESC_STR "[?1015h")
 		   : IF_EB("\033[?1015l", ESC_STR "[?1015l")));
-	ison = on;
+	mouse_ison = on;
     }
 # endif
 
 # ifdef FEAT_MOUSE_SGR
     if (ttym_flags == TTYM_SGR)
     {
+	/* SGR mode supports columns above 223 */
 	out_str_nf((char_u *)
 		   (on
 		   ? IF_EB("\033[?1006h", ESC_STR "[?1006h")
 		   : IF_EB("\033[?1006l", ESC_STR "[?1006l")));
-	ison = on;
+	mouse_ison = on;
+    }
+# endif
+
+# ifdef FEAT_BEVAL_TERM
+    if (bevalterm_ison != (p_bevalterm && on))
+    {
+	bevalterm_ison = (p_bevalterm && on);
+	if (xterm_mouse_vers > 1 && !bevalterm_ison)
+	    /* disable mouse movement events, enabling is below */
+	    out_str_nf((char_u *)
+			(IF_EB("\033[?1003l", ESC_STR "[?1003l")));
     }
 # endif
 
@@ -3494,14 +3626,19 @@ mch_setmouse(int on)
 	if (on)	/* enable mouse events, use mouse tracking if available */
 	    out_str_nf((char_u *)
 		       (xterm_mouse_vers > 1
-			? IF_EB("\033[?1002h", ESC_STR "[?1002h")
+			? (
+# ifdef FEAT_BEVAL_TERM
+			    bevalterm_ison
+			       ? IF_EB("\033[?1003h", ESC_STR "[?1003h") :
+# endif
+			      IF_EB("\033[?1002h", ESC_STR "[?1002h"))
 			: IF_EB("\033[?1000h", ESC_STR "[?1000h")));
 	else	/* disable mouse events, could probably always send the same */
 	    out_str_nf((char_u *)
 		       (xterm_mouse_vers > 1
 			? IF_EB("\033[?1002l", ESC_STR "[?1002l")
 			: IF_EB("\033[?1000l", ESC_STR "[?1000l")));
-	ison = on;
+	mouse_ison = on;
     }
 
 # ifdef FEAT_MOUSE_DEC
@@ -3511,7 +3648,7 @@ mch_setmouse(int on)
 	    out_str_nf((char_u *)"\033[1;2'z\033[1;3'{");
 	else	/* disable mouse events */
 	    out_str_nf((char_u *)"\033['z");
-	ison = on;
+	mouse_ison = on;
     }
 # endif
 
@@ -3521,12 +3658,12 @@ mch_setmouse(int on)
 	if (on)
 	{
 	    if (gpm_open())
-		ison = TRUE;
+		mouse_ison = TRUE;
 	}
 	else
 	{
 	    gpm_close();
-	    ison = FALSE;
+	    mouse_ison = FALSE;
 	}
     }
 # endif
@@ -3537,12 +3674,12 @@ mch_setmouse(int on)
 	if (on)
 	{
 	    if (sysmouse_open() == OK)
-		ison = TRUE;
+		mouse_ison = TRUE;
 	}
 	else
 	{
 	    sysmouse_close();
-	    ison = FALSE;
+	    mouse_ison = FALSE;
 	}
     }
 # endif
@@ -3575,13 +3712,13 @@ mch_setmouse(int on)
 	    out_str_nf((char_u *)IF_EB("\033[0~ZwLMRK+1Q\033\\",
 					ESC_STR "[0~ZwLMRK+1Q" ESC_STR "\\"));
 #  endif
-	    ison = TRUE;
+	    mouse_ison = TRUE;
 	}
 	else
 	{
 	    out_str_nf((char_u *)IF_EB("\033[0~ZwQ\033\\",
 					      ESC_STR "[0~ZwQ" ESC_STR "\\"));
-	    ison = FALSE;
+	    mouse_ison = FALSE;
 	}
     }
 # endif
@@ -3593,10 +3730,21 @@ mch_setmouse(int on)
 	    out_str_nf("\033[>1h\033[>6h\033[>7h\033[>1h\033[>9l");
 	else
 	    out_str_nf("\033[>1l\033[>6l\033[>7l\033[>1l\033[>9h");
-	ison = on;
+	mouse_ison = on;
     }
 # endif
 }
+
+#if defined(FEAT_BEVAL_TERM) || defined(PROTO)
+/*
+ * Called when 'balloonevalterm' changed.
+ */
+    void
+mch_bevalterm_changed(void)
+{
+    mch_setmouse(mouse_ison);
+}
+#endif
 
 /*
  * Set the mouse termcode, depending on the 'term' and 'ttymouse' options.
@@ -3699,7 +3847,6 @@ check_mouse_termcode(void)
 	del_mouse_termcode(KS_PTERM_MOUSE);
 # endif
 # ifdef FEAT_MOUSE_URXVT
-    /* same conflict as the dec mouse */
     if (use_xterm_mouse() == 3
 #  ifdef FEAT_GUI
 	    && !gui.in_use
@@ -3707,8 +3854,8 @@ check_mouse_termcode(void)
 	    )
     {
 	set_mouse_termcode(KS_URXVT_MOUSE, (char_u *)(term_is_8bit(T_NAME)
-		    ? IF_EB("\233", CSI_STR)
-		    : IF_EB("\033[", ESC_STR "[")));
+		    ? IF_EB("\233*M", CSI_STR "*M")
+		    : IF_EB("\033[*M", ESC_STR "[*M")));
 
 	if (*p_mouse != NUL)
 	{
@@ -3720,7 +3867,6 @@ check_mouse_termcode(void)
 	del_mouse_termcode(KS_URXVT_MOUSE);
 # endif
 # ifdef FEAT_MOUSE_SGR
-    /* There is no conflict with xterm mouse */
     if (use_xterm_mouse() == 4
 #  ifdef FEAT_GUI
 	    && !gui.in_use
@@ -3728,8 +3874,12 @@ check_mouse_termcode(void)
 	    )
     {
 	set_mouse_termcode(KS_SGR_MOUSE, (char_u *)(term_is_8bit(T_NAME)
-		    ? IF_EB("\233<", CSI_STR "<")
-		    : IF_EB("\033[<", ESC_STR "[<")));
+		    ? IF_EB("\233<*M", CSI_STR "<*M")
+		    : IF_EB("\033[<*M", ESC_STR "[<*M")));
+
+	set_mouse_termcode(KS_SGR_MOUSE_RELEASE, (char_u *)(term_is_8bit(T_NAME)
+		    ? IF_EB("\233<*m", CSI_STR "<*m")
+		    : IF_EB("\033[<*m", ESC_STR "[<*m")));
 
 	if (*p_mouse != NUL)
 	{
@@ -3738,7 +3888,10 @@ check_mouse_termcode(void)
 	}
     }
     else
+    {
 	del_mouse_termcode(KS_SGR_MOUSE);
+	del_mouse_termcode(KS_SGR_MOUSE_RELEASE);
+    }
 # endif
 }
 #endif
@@ -3769,19 +3922,6 @@ mch_get_shellsize(void)
     long	rows = 0;
     long	columns = 0;
     char_u	*p;
-
-    /*
-     * For OS/2 use _scrsize().
-     */
-# ifdef __EMX__
-    {
-	int s[2];
-
-	_scrsize(s);
-	columns = s[0];
-	rows = s[1];
-    }
-# endif
 
     /*
      * 1. try using an ioctl. It is the most accurate method.
@@ -3854,6 +3994,44 @@ mch_get_shellsize(void)
     return OK;
 }
 
+#if defined(FEAT_TERMINAL) || defined(PROTO)
+/*
+ * Report the windows size "rows" and "cols" to tty "fd".
+ */
+    int
+mch_report_winsize(int fd, int rows, int cols)
+{
+# ifdef TIOCSWINSZ
+    struct winsize	ws;
+
+    ws.ws_col = cols;
+    ws.ws_row = rows;
+    ws.ws_xpixel = cols * 5;
+    ws.ws_ypixel = rows * 10;
+    if (ioctl(fd, TIOCSWINSZ, &ws) == 0)
+    {
+	ch_log(NULL, "ioctl(TIOCSWINSZ) success");
+	return OK;
+    }
+    ch_log(NULL, "ioctl(TIOCSWINSZ) failed");
+# else
+#  ifdef TIOCSSIZE
+    struct ttysize	ts;
+
+    ts.ts_cols = cols;
+    ts.ts_lines = rows;
+    if (ioctl(fd, TIOCSSIZE, &ws) == 0)
+    {
+	ch_log(NULL, "ioctl(TIOCSSIZE) success");
+	return OK;
+    }
+    ch_log(NULL, "ioctl(TIOCSSIZE) failed");
+#  endif
+# endif
+    return FAIL;
+}
+#endif
+
 /*
  * Try to set the window size to Rows and Columns.
  */
@@ -3892,6 +4070,7 @@ mch_new_shellsize(void)
 wait4pid(pid_t child, waitstatus *status)
 {
     pid_t wait_pid = 0;
+    long delay_msec = 1;
 
     while (wait_pid != child)
     {
@@ -3906,8 +4085,10 @@ wait4pid(pid_t child, waitstatus *status)
 # endif
 	if (wait_pid == 0)
 	{
-	    /* Wait for 10 msec before trying again. */
-	    mch_delay(10L, TRUE);
+	    /* Wait for 1 to 10 msec before trying again. */
+	    mch_delay(delay_msec, TRUE);
+	    if (++delay_msec > 10)
+		delay_msec = 10;
 	    continue;
 	}
 	if (wait_pid <= 0
@@ -3930,7 +4111,7 @@ wait4pid(pid_t child, waitstatus *status)
 mch_parse_cmd(char_u *cmd, int use_shcf, char ***argv, int *argc)
 {
     int		i;
-    char_u	*p;
+    char_u	*p, *d;
     int		inquote;
 
     /*
@@ -3940,7 +4121,7 @@ mch_parse_cmd(char_u *cmd, int use_shcf, char ***argv, int *argc)
      */
     for (i = 0; i < 2; ++i)
     {
-	p = cmd;
+	p = skipwhite(cmd);
 	inquote = FALSE;
 	*argc = 0;
 	for (;;)
@@ -3948,17 +4129,34 @@ mch_parse_cmd(char_u *cmd, int use_shcf, char ***argv, int *argc)
 	    if (i == 1)
 		(*argv)[*argc] = (char *)p;
 	    ++*argc;
+	    d = p;
 	    while (*p != NUL && (inquote || (*p != ' ' && *p != TAB)))
 	    {
-		if (*p == '"')
+		if (p[0] == '"')
+		    /* quotes surrounding an argument and are dropped */
 		    inquote = !inquote;
+		else
+		{
+		    if (p[0] == '\\' && p[1] != NUL)
+		    {
+			/* First pass: skip over "\ " and "\"".
+			 * Second pass: Remove the backslash. */
+			++p;
+		    }
+		    if (i == 1)
+			*d++ = *p;
+		}
 		++p;
 	    }
 	    if (*p == NUL)
+	    {
+		if (i == 1)
+		    *d++ = NUL;
 		break;
+	    }
 	    if (i == 1)
-		*p++ = NUL;
-	    p = skipwhite(p);
+		*d++ = NUL;
+	    p = skipwhite(p + 1);
 	}
 	if (*argv == NULL)
 	{
@@ -3986,40 +4184,127 @@ mch_parse_cmd(char_u *cmd, int use_shcf, char ***argv, int *argc)
 #endif
 
 #if !defined(USE_SYSTEM) || defined(FEAT_JOB_CHANNEL)
+/*
+ * Set the environment for a child process.
+ */
     static void
-set_child_environment(void)
+set_child_environment(long rows, long columns, char *term)
 {
 # ifdef HAVE_SETENV
     char	envbuf[50];
 # else
+    static char	envbuf_Term[30];
     static char	envbuf_Rows[20];
+    static char	envbuf_Lines[20];
     static char	envbuf_Columns[20];
+    static char	envbuf_Colors[20];
+#  ifdef FEAT_CLIENTSERVER
+    static char	envbuf_Servername[60];
+#  endif
 # endif
+    long	colors =
+#  ifdef FEAT_GUI
+	    gui.in_use ? 256*256*256 :
+#  endif
+	    t_colors;
 
-    /* Simulate to have a dumb terminal (for now) */
 # ifdef HAVE_SETENV
-    setenv("TERM", "dumb", 1);
-    sprintf((char *)envbuf, "%ld", Rows);
+    setenv("TERM", term, 1);
+    sprintf((char *)envbuf, "%ld", rows);
     setenv("ROWS", (char *)envbuf, 1);
-    sprintf((char *)envbuf, "%ld", Rows);
+    sprintf((char *)envbuf, "%ld", rows);
     setenv("LINES", (char *)envbuf, 1);
-    sprintf((char *)envbuf, "%ld", Columns);
+    sprintf((char *)envbuf, "%ld", columns);
     setenv("COLUMNS", (char *)envbuf, 1);
+    sprintf((char *)envbuf, "%ld", colors);
+    setenv("COLORS", (char *)envbuf, 1);
+#  ifdef FEAT_CLIENTSERVER
+    setenv("VIM_SERVERNAME", serverName == NULL ? "" : (char *)serverName, 1);
+#  endif
 # else
     /*
      * Putenv does not copy the string, it has to remain valid.
      * Use a static array to avoid losing allocated memory.
+     * This won't work well when running multiple children...
      */
-    putenv("TERM=dumb");
-    sprintf(envbuf_Rows, "ROWS=%ld", Rows);
+    vim_snprintf(envbuf_Term, sizeof(envbuf_Term), "TERM=%s", term);
+    putenv(envbuf_Term);
+    vim_snprintf(envbuf_Rows, sizeof(envbuf_Rows), "ROWS=%ld", rows);
     putenv(envbuf_Rows);
-    sprintf(envbuf_Rows, "LINES=%ld", Rows);
-    putenv(envbuf_Rows);
-    sprintf(envbuf_Columns, "COLUMNS=%ld", Columns);
+    vim_snprintf(envbuf_Lines, sizeof(envbuf_Lines), "LINES=%ld", rows);
+    putenv(envbuf_Lines);
+    vim_snprintf(envbuf_Columns, sizeof(envbuf_Columns),
+						       "COLUMNS=%ld", columns);
     putenv(envbuf_Columns);
+    vim_snprintf(envbuf_Colors, sizeof(envbuf_Colors), "COLORS=%ld", colors);
+    putenv(envbuf_Colors);
+#  ifdef FEAT_CLIENTSERVER
+    vim_snprintf(envbuf_Servername, sizeof(envbuf_Servername),
+	    "VIM_SERVERNAME=%s", serverName == NULL ? "" : (char *)serverName);
+    putenv(envbuf_Servername);
+#  endif
 # endif
 }
+
+    static void
+set_default_child_environment(void)
+{
+    set_child_environment(Rows, Columns, "dumb");
+}
 #endif
+
+#if defined(FEAT_GUI) || defined(FEAT_JOB_CHANNEL)
+/*
+ * Open a PTY, with FD for the master and slave side.
+ * When failing "pty_master_fd" and "pty_slave_fd" are -1.
+ * When successful both file descriptors are stored.
+ */
+    static void
+open_pty(int *pty_master_fd, int *pty_slave_fd, char_u **namep)
+{
+    char	*tty_name;
+
+    *pty_master_fd = OpenPTY(&tty_name);	    /* open pty */
+    if (*pty_master_fd >= 0)
+    {
+	/* Leaving out O_NOCTTY may lead to waitpid() always returning
+	 * 0 on Mac OS X 10.7 thereby causing freezes. Let's assume
+	 * adding O_NOCTTY always works when defined. */
+#ifdef O_NOCTTY
+	*pty_slave_fd = open(tty_name, O_RDWR | O_NOCTTY | O_EXTRA, 0);
+#else
+	*pty_slave_fd = open(tty_name, O_RDWR | O_EXTRA, 0);
+#endif
+	if (*pty_slave_fd < 0)
+	{
+	    close(*pty_master_fd);
+	    *pty_master_fd = -1;
+	}
+	else if (namep != NULL)
+	    *namep = vim_strsave((char_u *)tty_name);
+    }
+}
+#endif
+
+/*
+ * Send SIGINT to a child process if "c" is an interrupt character.
+ */
+    void
+may_send_sigint(int c UNUSED, pid_t pid UNUSED, pid_t wpid UNUSED)
+{
+# ifdef SIGINT
+    if (c == Ctrl_C || c == intr_char)
+    {
+#  ifdef HAVE_SETSID
+	kill(-pid, SIGINT);
+#  else
+	kill(0, SIGINT);
+#  endif
+	if (wpid > 0)
+	    kill(wpid, SIGINT);
+    }
+# endif
+}
 
     int
 mch_call_shell(
@@ -4032,31 +4317,8 @@ mch_call_shell(
 #endif
     int		tmode = cur_tmode;
 #ifdef USE_SYSTEM	/* use system() to start the shell: simple but slow */
-    int	    x;
-# ifndef __EMX__
-    char_u  *newcmd;   /* only needed for unix */
-# else
-    /*
-     * Set the preferred shell in the EMXSHELL environment variable (but
-     * only if it is different from what is already in the environment).
-     * Emx then takes care of whether to use "/c" or "-c" in an
-     * intelligent way. Simply pass the whole thing to emx's system() call.
-     * Emx also starts an interactive shell if system() is passed an empty
-     * string.
-     */
-    char_u *p, *old;
-
-    if (((old = (char_u *)getenv("EMXSHELL")) == NULL) || STRCMP(old, p_sh))
-    {
-	/* should check HAVE_SETENV, but I know we don't have it. */
-	p = alloc(10 + strlen(p_sh));
-	if (p)
-	{
-	    sprintf((char *)p, "EMXSHELL=%s", p_sh);
-	    putenv((char *)p);	/* don't free the pointer! */
-	}
-    }
-# endif
+    char_u	*newcmd;	/* only needed for unix */
+    int		x;
 
     out_flush();
 
@@ -4068,24 +4330,11 @@ mch_call_shell(
     loose_clipboard();
 # endif
 
-# ifdef __EMX__
-    if (cmd == NULL)
-	x = system("");	/* this starts an interactive shell in emx */
-    else
-	x = system((char *)cmd);
-    /* system() returns -1 when error occurs in starting shell */
-    if (x == -1 && !emsg_silent)
-    {
-	MSG_PUTS(_("\nCannot execute shell "));
-	msg_outtrans(p_sh);
-	msg_putchar('\n');
-    }
-# else /* not __EMX__ */
     if (cmd == NULL)
 	x = system((char *)p_sh);
     else
     {
-#  ifdef VMS
+# ifdef VMS
 	if (ofn = strchr((char *)cmd, '>'))
 	    *ofn++ = '\0';
 	if (ifn = strchr((char *)cmd, '<'))
@@ -4101,7 +4350,7 @@ mch_call_shell(
 	    x = vms_sys((char *)cmd, ofn, ifn);
 	else
 	    x = system((char *)cmd);
-#  else
+# else
 	newcmd = lalloc(STRLEN(p_sh)
 		+ (extra_shell_arg == NULL ? 0 : STRLEN(extra_shell_arg))
 		+ STRLEN(p_shcf) + STRLEN(cmd) + 4, TRUE);
@@ -4116,7 +4365,7 @@ mch_call_shell(
 	    x = system((char *)newcmd);
 	    vim_free(newcmd);
 	}
-#  endif
+# endif
     }
 # ifdef VMS
     x = vms_sys_status(x);
@@ -4125,7 +4374,6 @@ mch_call_shell(
 	;
     else if (x == 127)
 	MSG_PUTS(_("\nCannot execute shell sh\n"));
-# endif	/* __EMX__ */
     else if (x && !(options & SHELL_SILENT))
     {
 	MSG_PUTS(_("\nshell returned "));
@@ -4147,6 +4395,7 @@ mch_call_shell(
 
 # define EXEC_FAILED 122    /* Exit code when shell didn't execute.  Don't use
 			       127, some shells use that already */
+# define OPEN_NULL_FAILED 123 /* Exit code if /dev/null can't be opened */
 
     char_u	*newcmd;
     pid_t	pid;
@@ -4166,7 +4415,6 @@ mch_call_shell(
     int		pty_master_fd = -1;	    /* for pty's */
 # ifdef FEAT_GUI
     int		pty_slave_fd = -1;
-    char	*tty_name;
 # endif
     int		fd_toshell[2];		/* for pipes */
     int		fd_fromshell[2];
@@ -4229,25 +4477,7 @@ mch_call_shell(
 	 * If the slave can't be opened, close the master pty.
 	 */
 	if (p_guipty && !(options & (SHELL_READ|SHELL_WRITE)))
-	{
-	    pty_master_fd = OpenPTY(&tty_name);	    /* open pty */
-	    if (pty_master_fd >= 0)
-	    {
-		/* Leaving out O_NOCTTY may lead to waitpid() always returning
-		 * 0 on Mac OS X 10.7 thereby causing freezes. Let's assume
-		 * adding O_NOCTTY always works when defined. */
-#ifdef O_NOCTTY
-		pty_slave_fd = open(tty_name, O_RDWR | O_NOCTTY | O_EXTRA, 0);
-#else
-		pty_slave_fd = open(tty_name, O_RDWR | O_EXTRA, 0);
-#endif
-		if (pty_slave_fd < 0)
-		{
-		    close(pty_master_fd);
-		    pty_master_fd = -1;
-		}
-	    }
-	}
+	    open_pty(&pty_master_fd, &pty_slave_fd, NULL);
 	/*
 	 * If not opening a pty or it didn't work, try using pipes.
 	 */
@@ -4274,12 +4504,18 @@ mch_call_shell(
 
     if (!pipe_error)			/* pty or pipe opened or not used */
     {
+	SIGSET_DECL(curset)
+
 # ifdef __BEOS__
 	beos_cleanup_read_thread();
 # endif
 
-	if ((pid = fork()) == -1)	/* maybe we should use vfork() */
+	BLOCK_SIGNALS(&curset);
+	pid = fork();	/* maybe we should use vfork() */
+	if (pid == -1)
 	{
+	    UNBLOCK_SIGNALS(&curset);
+
 	    MSG_PUTS(_("\nCannot fork\n"));
 	    if ((options & (SHELL_READ|SHELL_WRITE))
 # ifdef FEAT_GUI
@@ -4306,6 +4542,7 @@ mch_call_shell(
 	else if (pid == 0)	/* child */
 	{
 	    reset_signals();		/* handle signals normally */
+	    UNBLOCK_SIGNALS(&curset);
 
 	    if (!show_shell_mess || (options & SHELL_EXPAND))
 	    {
@@ -4380,7 +4617,7 @@ mch_call_shell(
 #  endif
 		}
 # endif
-		set_child_environment();
+		set_default_child_environment();
 
 		/*
 		 * stderr is only redirected when using the GUI, so that a
@@ -4449,7 +4686,10 @@ mch_call_shell(
 	     */
 	    catch_signals(SIG_IGN, SIG_ERR);
 	    catch_int_signal();
-
+	    UNBLOCK_SIGNALS(&curset);
+# ifdef FEAT_JOB_CHANNEL
+	    ++dont_check_job_ended;
+# endif
 	    /*
 	     * For the GUI we redirect stdin, stdout and stderr to our window.
 	     * This is also used to pipe stdin/stdout to/from the external
@@ -4588,8 +4828,8 @@ mch_call_shell(
 		    ga_init2(&ga, 1, BUFLEN);
 
 		noread_cnt = 0;
-# if defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
-		gettimeofday(&start_tv, NULL);
+# ifdef ELAPSED_FUNC
+		ELAPSED_INIT(start_tv);
 # endif
 		for (;;)
 		{
@@ -4624,8 +4864,8 @@ mch_call_shell(
 			  /* Get extra characters when we don't have any.
 			   * Reset the counter and timer. */
 			  noread_cnt = 0;
-# if defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
-			  gettimeofday(&start_tv, NULL);
+# ifdef ELAPSED_FUNC
+			  ELAPSED_INIT(start_tv);
 # endif
 			  len = ui_inchar(ta_buf, BUFLEN, 10L, 0);
 		      }
@@ -4638,23 +4878,12 @@ mch_call_shell(
 			 */
 			if (len == 1 && (pty_master_fd < 0 || cmd != NULL))
 			{
-# ifdef SIGINT
 			    /*
 			     * Send SIGINT to the child's group or all
 			     * processes in our group.
 			     */
-			    if (ta_buf[ta_len] == Ctrl_C
-					       || ta_buf[ta_len] == intr_char)
-			    {
-#  ifdef HAVE_SETSID
-				kill(-pid, SIGINT);
-#  else
-				kill(0, SIGINT);
-#  endif
-				if (wpid > 0)
-				    kill(wpid, SIGINT);
-			    }
-# endif
+			    may_send_sigint(ta_buf[ta_len], pid, wpid);
+
 			    if (pty_master_fd < 0 && toshell_fd >= 0
 					       && ta_buf[ta_len] == Ctrl_D)
 			    {
@@ -4802,7 +5031,7 @@ mch_call_shell(
 			     * round. */
 			    for (p = buffer; p < buffer + len; p += l)
 			    {
-				l = mb_cptr2len(p);
+				l = MB_CPTR2LEN(p);
 				if (l == 0)
 				    l = 1;  /* NUL byte? */
 				else if (MB_BYTE2LEN(*p) != l)
@@ -4844,17 +5073,14 @@ mch_call_shell(
 			if (got_int)
 			    break;
 
-# if defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
+# ifdef ELAPSED_FUNC
+			if (wait_pid == 0)
 			{
-			    struct timeval  now_tv;
-			    long	    msec;
+			    long	msec = ELAPSED_FUNC(start_tv);
 
 			    /* Avoid that we keep looping here without
 			     * checking for a CTRL-C for a long time.  Don't
 			     * break out too often to avoid losing typeahead. */
-			    gettimeofday(&now_tv, NULL);
-			    msec = (now_tv.tv_sec - start_tv.tv_sec) * 1000L
-				+ (now_tv.tv_usec - start_tv.tv_usec) / 1000L;
 			    if (msec > 2000)
 			    {
 				noread_cnt = 5;
@@ -4864,10 +5090,15 @@ mch_call_shell(
 # endif
 		    }
 
-		    /* If we already detected the child has finished break the
-		     * loop now. */
+		    /* If we already detected the child has finished, continue
+		     * reading output for a short while.  Some text may be
+		     * buffered. */
 		    if (wait_pid == pid)
+		    {
+			if (noread_cnt < 5)
+			    continue;
 			break;
+		    }
 
 		    /*
 		     * Check if the child still exists, before checking for
@@ -4923,6 +5154,8 @@ finished:
 # if defined(FEAT_XCLIPBOARD) && defined(FEAT_X11)
 	    else
 	    {
+		long delay_msec = 1;
+
 		/*
 		 * Similar to the loop above, but only handle X events, no
 		 * I/O.
@@ -4955,7 +5188,11 @@ finished:
 		    /* Handle any X events, e.g. serving the clipboard. */
 		    clip_update();
 
-		    mch_delay(10L, TRUE);
+		    /* Wait for 1 to 10 msec. 1 is faster but gives the child
+		     * less time. */
+		    mch_delay(delay_msec, TRUE);
+		    if (++delay_msec > 10)
+			delay_msec = 10;
 		}
 	    }
 # endif
@@ -4985,6 +5222,10 @@ finished:
 		kill(wpid, SIGKILL);
 		wait4pid(wpid, NULL);
 	    }
+
+# ifdef FEAT_JOB_CHANNEL
+	    --dont_check_job_ended;
+# endif
 
 	    /*
 	     * Set to raw mode right now, otherwise a CTRL-C after
@@ -5038,12 +5279,14 @@ error:
 
 #if defined(FEAT_JOB_CHANNEL) || defined(PROTO)
     void
-mch_start_job(char **argv, job_T *job, jobopt_T *options UNUSED)
+mch_job_start(char **argv, job_T *job, jobopt_T *options)
 {
     pid_t	pid;
-    int		fd_in[2];	/* for stdin */
-    int		fd_out[2];	/* for stdout */
-    int		fd_err[2];	/* for stderr */
+    int		fd_in[2] = {-1, -1};	/* for stdin */
+    int		fd_out[2] = {-1, -1};	/* for stdout */
+    int		fd_err[2] = {-1, -1};	/* for stderr */
+    int		pty_master_fd = -1;
+    int		pty_slave_fd = -1;
     channel_T	*channel = NULL;
     int		use_null_for_in = options->jo_io[PART_IN] == JIO_NULL;
     int		use_null_for_out = options->jo_io[PART_OUT] == JIO_NULL;
@@ -5051,19 +5294,25 @@ mch_start_job(char **argv, job_T *job, jobopt_T *options UNUSED)
     int		use_file_for_in = options->jo_io[PART_IN] == JIO_FILE;
     int		use_file_for_out = options->jo_io[PART_OUT] == JIO_FILE;
     int		use_file_for_err = options->jo_io[PART_ERR] == JIO_FILE;
+    int		use_buffer_for_in = options->jo_io[PART_IN] == JIO_BUFFER;
     int		use_out_for_err = options->jo_io[PART_ERR] == JIO_OUT;
+    SIGSET_DECL(curset)
 
     if (use_out_for_err && use_null_for_out)
 	use_null_for_err = TRUE;
 
     /* default is to fail */
     job->jv_status = JOB_FAILED;
-    fd_in[0] = -1;
-    fd_in[1] = -1;
-    fd_out[0] = -1;
-    fd_out[1] = -1;
-    fd_err[0] = -1;
-    fd_err[1] = -1;
+
+    if (options->jo_pty
+	    && (!(use_file_for_in || use_null_for_in)
+		|| !(use_file_for_in || use_null_for_out)
+		|| !(use_out_for_err || use_file_for_err || use_null_for_err)))
+    {
+	open_pty(&pty_master_fd, &pty_slave_fd, &job->jv_tty_out);
+	if (job->jv_tty_out != NULL)
+	    job->jv_tty_in = vim_strsave(job->jv_tty_out);
+    }
 
     /* TODO: without the channel feature connect the child to /dev/null? */
     /* Open pipes for stdin, stdout, stderr. */
@@ -5078,8 +5327,12 @@ mch_start_job(char **argv, job_T *job, jobopt_T *options UNUSED)
 	    goto failed;
 	}
     }
-    else if (!use_null_for_in && pipe(fd_in) < 0)
-	goto failed;
+    else
+	/* When writing buffer lines to the input don't use the pty, so that
+	 * the pipe can be closed when all lines were written. */
+	if (!use_null_for_in && (pty_master_fd < 0 || use_buffer_for_in)
+							    && pipe(fd_in) < 0)
+	    goto failed;
 
     if (use_file_for_out)
     {
@@ -5092,7 +5345,7 @@ mch_start_job(char **argv, job_T *job, jobopt_T *options UNUSED)
 	    goto failed;
 	}
     }
-    else if (!use_null_for_out && pipe(fd_out) < 0)
+    else if (!use_null_for_out && pty_master_fd < 0 && pipe(fd_out) < 0)
 	goto failed;
 
     if (use_file_for_err)
@@ -5106,7 +5359,8 @@ mch_start_job(char **argv, job_T *job, jobopt_T *options UNUSED)
 	    goto failed;
 	}
     }
-    else if (!use_out_for_err && !use_null_for_err && pipe(fd_err) < 0)
+    else if (!use_out_for_err && !use_null_for_err
+				      && pty_master_fd < 0 && pipe(fd_err) < 0)
 	goto failed;
 
     if (!use_null_for_in || !use_null_for_out || !use_null_for_err)
@@ -5121,21 +5375,27 @@ mch_start_job(char **argv, job_T *job, jobopt_T *options UNUSED)
 	    channel = add_channel();
 	if (channel == NULL)
 	    goto failed;
+	if (job->jv_tty_out != NULL)
+	    ch_log(channel, "using pty %s on fd %d",
+					       job->jv_tty_out, pty_master_fd);
     }
 
+    BLOCK_SIGNALS(&curset);
     pid = fork();	/* maybe we should use vfork() */
-    if (pid  == -1)
+    if (pid == -1)
     {
 	/* failed to fork */
+	UNBLOCK_SIGNALS(&curset);
 	goto failed;
     }
-
     if (pid == 0)
     {
-	int		null_fd = -1;
+	int	null_fd = -1;
+	int	stderr_works = TRUE;
 
 	/* child */
 	reset_signals();		/* handle signals normally */
+	UNBLOCK_SIGNALS(&curset);
 
 # ifdef HAVE_SETSID
 	/* Create our own process group, so that the child and all its
@@ -5144,76 +5404,132 @@ mch_start_job(char **argv, job_T *job, jobopt_T *options UNUSED)
 	(void)setsid();
 # endif
 
-	set_child_environment();
+# ifdef FEAT_TERMINAL
+	if (options->jo_term_rows > 0)
+	    set_child_environment(
+		    (long)options->jo_term_rows,
+		    (long)options->jo_term_cols,
+		    STRNCMP(T_NAME, "xterm", 5) == 0
+						   ? (char *)T_NAME : "xterm");
+	else
+# endif
+	    set_default_child_environment();
+
+	if (options->jo_env != NULL)
+	{
+	    dict_T	*dict = options->jo_env;
+	    hashitem_T	*hi;
+	    int		todo = (int)dict->dv_hashtab.ht_used;
+
+	    for (hi = dict->dv_hashtab.ht_array; todo > 0; ++hi)
+		if (!HASHITEM_EMPTY(hi))
+		{
+		    typval_T *item = &dict_lookup(hi)->di_tv;
+
+		    vim_setenv((char_u*)hi->hi_key, get_tv_string(item));
+		    --todo;
+		}
+	}
 
 	if (use_null_for_in || use_null_for_out || use_null_for_err)
+	{
 	    null_fd = open("/dev/null", O_RDWR | O_EXTRA, 0);
+	    if (null_fd < 0)
+	    {
+		perror("opening /dev/null failed");
+		_exit(OPEN_NULL_FAILED);
+	    }
+	}
+
+	if (pty_slave_fd >= 0)
+	{
+	    /* push stream discipline modules */
+	    SetupSlavePTY(pty_slave_fd);
+#  ifdef TIOCSCTTY
+	    /* Try to become controlling tty (probably doesn't work,
+	     * unless run by root) */
+	    ioctl(pty_slave_fd, TIOCSCTTY, (char *)NULL);
+#  endif
+	}
 
 	/* set up stdin for the child */
+	close(0);
 	if (use_null_for_in && null_fd >= 0)
-	{
-	    close(0);
 	    ignored = dup(null_fd);
-	}
+	else if (fd_in[0] < 0)
+	    ignored = dup(pty_slave_fd);
 	else
-	{
-	    if (!use_file_for_in)
-		close(fd_in[1]);
-	    close(0);
 	    ignored = dup(fd_in[0]);
-	    close(fd_in[0]);
-	}
 
 	/* set up stderr for the child */
+	close(2);
 	if (use_null_for_err && null_fd >= 0)
 	{
-	    close(2);
 	    ignored = dup(null_fd);
+	    stderr_works = FALSE;
 	}
 	else if (use_out_for_err)
-	{
-	    close(2);
 	    ignored = dup(fd_out[1]);
-	}
+	else if (fd_err[1] < 0)
+	    ignored = dup(pty_slave_fd);
 	else
-	{
-	    if (!use_file_for_err)
-		close(fd_err[0]);
-	    close(2);
 	    ignored = dup(fd_err[1]);
-	    close(fd_err[1]);
-	}
 
 	/* set up stdout for the child */
+	close(1);
 	if (use_null_for_out && null_fd >= 0)
-	{
-	    close(0);
 	    ignored = dup(null_fd);
-	}
+	else if (fd_out[1] < 0)
+	    ignored = dup(pty_slave_fd);
 	else
-	{
-	    if (!use_file_for_out)
-		close(fd_out[0]);
-	    close(1);
 	    ignored = dup(fd_out[1]);
+
+	if (fd_in[0] >= 0)
+	    close(fd_in[0]);
+	if (fd_in[1] >= 0)
+	    close(fd_in[1]);
+	if (fd_out[0] >= 0)
+	    close(fd_out[0]);
+	if (fd_out[1] >= 0)
 	    close(fd_out[1]);
+	if (fd_err[0] >= 0)
+	    close(fd_err[0]);
+	if (fd_err[1] >= 0)
+	    close(fd_err[1]);
+	if (pty_master_fd >= 0)
+	{
+	    close(pty_master_fd); /* not used in the child */
+	    close(pty_slave_fd);  /* was duped above */
 	}
+
 	if (null_fd >= 0)
 	    close(null_fd);
+
+	if (options->jo_cwd != NULL && mch_chdir((char *)options->jo_cwd) != 0)
+	    _exit(EXEC_FAILED);
 
 	/* See above for type of argv. */
 	execvp(argv[0], argv);
 
-	perror("executing job failed");
+	if (stderr_works)
+	    perror("executing job failed");
+# ifdef EXITFREE
+	/* calling free_all_mem() here causes problems. Ignore valgrind
+	 * reporting possibly leaked memory. */
+# endif
 	_exit(EXEC_FAILED);	    /* exec failed, return failure code */
     }
 
     /* parent */
+    UNBLOCK_SIGNALS(&curset);
+
     job->jv_pid = pid;
     job->jv_status = JOB_STARTED;
     job->jv_channel = channel;  /* ch_refcount was set above */
 
-    /* child stdin, stdout and stderr */
+    if (pty_master_fd >= 0)
+	close(pty_slave_fd); /* not used in the parent */
+    /* close child stdin, stdout and stderr */
     if (!use_file_for_in && fd_in[0] >= 0)
 	close(fd_in[0]);
     if (!use_file_for_out && fd_out[1] >= 0)
@@ -5223,13 +5539,24 @@ mch_start_job(char **argv, job_T *job, jobopt_T *options UNUSED)
     if (channel != NULL)
     {
 	channel_set_pipes(channel,
-		      use_file_for_in || use_null_for_in
-						      ? INVALID_FD : fd_in[1],
-		      use_file_for_out || use_null_for_out
-						     ? INVALID_FD : fd_out[0],
-		      use_out_for_err || use_file_for_err || use_null_for_err
-						    ? INVALID_FD : fd_err[0]);
+		use_file_for_in || use_null_for_in
+			? INVALID_FD : fd_in[1] < 0 ? pty_master_fd : fd_in[1],
+		use_file_for_out || use_null_for_out
+		      ? INVALID_FD : fd_out[0] < 0 ? pty_master_fd : fd_out[0],
+		use_out_for_err || use_file_for_err || use_null_for_err
+		     ? INVALID_FD : fd_err[0] < 0 ? pty_master_fd : fd_err[0]);
 	channel_set_job(channel, job, options);
+    }
+    else
+    {
+	if (fd_in[1] >= 0)
+	    close(fd_in[1]);
+	if (fd_out[0] >= 0)
+	    close(fd_out[0]);
+	if (fd_err[0] >= 0)
+	    close(fd_err[0]);
+	if (pty_master_fd >= 0)
+	    close(pty_master_fd);
     }
 
     /* success! */
@@ -5249,6 +5576,10 @@ failed:
 	close(fd_err[0]);
     if (fd_err[1] >= 0)
 	close(fd_err[1]);
+    if (pty_master_fd >= 0)
+	close(pty_master_fd);
+    if (pty_slave_fd >= 0)
+	close(pty_slave_fd);
 }
 
     char *
@@ -5269,8 +5600,7 @@ mch_job_status(job_T *job)
     if (wait_pid == -1)
     {
 	/* process must have exited */
-	job->jv_status = JOB_ENDED;
-	return "dead";
+	goto return_dead;
     }
     if (wait_pid == 0)
 	return "run";
@@ -5278,20 +5608,77 @@ mch_job_status(job_T *job)
     {
 	/* LINTED avoid "bitwise operation on signed value" */
 	job->jv_exitval = WEXITSTATUS(status);
-	job->jv_status = JOB_ENDED;
-	return "dead";
+	goto return_dead;
     }
     if (WIFSIGNALED(status))
     {
 	job->jv_exitval = -1;
-	job->jv_status = JOB_ENDED;
-	return "dead";
+	goto return_dead;
     }
     return "run";
+
+return_dead:
+    if (job->jv_status < JOB_ENDED)
+    {
+	ch_log(job->jv_channel, "Job ended");
+	job->jv_status = JOB_ENDED;
+    }
+    return "dead";
 }
 
+    job_T *
+mch_detect_ended_job(job_T *job_list)
+{
+# ifdef HAVE_UNION_WAIT
+    union wait	status;
+# else
+    int		status = -1;
+# endif
+    pid_t	wait_pid = 0;
+    job_T	*job;
+
+# ifndef USE_SYSTEM
+    /* Do not do this when waiting for a shell command to finish, we would get
+     * the exit value here (and discard it), the exit value obtained there
+     * would then be wrong.  */
+    if (dont_check_job_ended > 0)
+	return NULL;
+# endif
+
+# ifdef __NeXT__
+    wait_pid = wait4(-1, &status, WNOHANG, (struct rusage *)0);
+# else
+    wait_pid = waitpid(-1, &status, WNOHANG);
+# endif
+    if (wait_pid <= 0)
+	/* no process ended */
+	return NULL;
+    for (job = job_list; job != NULL; job = job->jv_next)
+    {
+	if (job->jv_pid == wait_pid)
+	{
+	    if (WIFEXITED(status))
+		/* LINTED avoid "bitwise operation on signed value" */
+		job->jv_exitval = WEXITSTATUS(status);
+	    else if (WIFSIGNALED(status))
+		job->jv_exitval = -1;
+	    if (job->jv_status < JOB_ENDED)
+	    {
+		ch_log(job->jv_channel, "Job ended");
+		job->jv_status = JOB_ENDED;
+	    }
+	    return job;
+	}
+    }
+    return NULL;
+}
+
+/*
+ * Send a (deadly) signal to "job".
+ * Return FAIL if "how" is not a valid name.
+ */
     int
-mch_stop_job(job_T *job, char_u *how)
+mch_signal_job(job_T *job, char_u *how)
 {
     int	    sig = -1;
     pid_t   job_pid;
@@ -5306,6 +5693,10 @@ mch_stop_job(job_T *job, char_u *how)
 	sig = SIGINT;
     else if (STRCMP(how, "kill") == 0)
 	sig = SIGKILL;
+#ifdef SIGWINCH
+    else if (STRCMP(how, "winch") == 0)
+	sig = SIGWINCH;
+#endif
     else if (isdigit(*how))
 	sig = atoi((char *)how);
     else
@@ -5313,10 +5704,14 @@ mch_stop_job(job_T *job, char_u *how)
 
     /* TODO: have an option to only kill the process, not the group? */
     job_pid = job->jv_pid;
+#ifdef HAVE_GETPGID
     if (job_pid == getpgid(job_pid))
 	job_pid = -job_pid;
+#endif
 
-    kill(job_pid, sig);
+    /* Never kill ourselves! */
+    if (job_pid != 0)
+	kill(job_pid, sig);
 
     return OK;
 }
@@ -5336,14 +5731,46 @@ mch_clear_job(job_T *job)
 }
 #endif
 
+#if defined(FEAT_TERMINAL) || defined(PROTO)
+    int
+mch_create_pty_channel(job_T *job, jobopt_T *options)
+{
+    int		pty_master_fd = -1;
+    int		pty_slave_fd = -1;
+    channel_T	*channel;
+
+    open_pty(&pty_master_fd, &pty_slave_fd, &job->jv_tty_out);
+    if (job->jv_tty_out != NULL)
+	job->jv_tty_in = vim_strsave(job->jv_tty_out);
+    close(pty_slave_fd);
+
+    channel = add_channel();
+    if (channel == NULL)
+    {
+	close(pty_master_fd);
+	return FAIL;
+    }
+    if (job->jv_tty_out != NULL)
+	ch_log(channel, "using pty %s on fd %d",
+					       job->jv_tty_out, pty_master_fd);
+    job->jv_channel = channel;  /* ch_refcount was set by add_channel() */
+    channel->ch_keep_open = TRUE;
+
+    channel_set_pipes(channel, pty_master_fd, pty_master_fd, pty_master_fd);
+    channel_set_job(channel, job, options);
+    return OK;
+}
+#endif
+
 /*
  * Check for CTRL-C typed by reading all available characters.
  * In cooked mode we should get SIGINT, no need to check.
  */
     void
-mch_breakcheck(void)
+mch_breakcheck(int force)
 {
-    if (curr_tmode == TMODE_RAW && RealWaitForChar(read_cmd_fd, 0L, NULL, NULL))
+    if ((curr_tmode == TMODE_RAW || force)
+			       && RealWaitForChar(read_cmd_fd, 0L, NULL, NULL))
 	fill_input_buf(FALSE);
 }
 
@@ -5352,30 +5779,40 @@ mch_breakcheck(void)
  * from inbuf[].
  * "msec" == -1 will block forever.
  * Invokes timer callbacks when needed.
+ * When "ignore_input" is TRUE even check for pending input when input is
+ * already available.
+ * "interrupted" (if not NULL) is set to TRUE when no character is available
+ * but something else needs to be done.
+ * Returns TRUE when a character is available.
  * When a GUI is being used, this will never get called -- webb
  */
     static int
-WaitForChar(long msec)
+WaitForChar(long msec, int *interrupted, int ignore_input)
 {
 #ifdef FEAT_TIMERS
     long    due_time;
     long    remaining = msec;
-    int	    break_loop = FALSE;
+    int	    tb_change_cnt = typebuf.tb_change_cnt;
 
     /* When waiting very briefly don't trigger timers. */
     if (msec >= 0 && msec < 10L)
-	return WaitForCharOrMouse(msec, NULL);
+	return WaitForCharOrMouse(msec, NULL, ignore_input);
 
     while (msec < 0 || remaining > 0)
     {
 	/* Trigger timers and then get the time in msec until the next one is
 	 * due.  Wait up to that time. */
 	due_time = check_due_timer();
+	if (typebuf.tb_change_cnt != tb_change_cnt)
+	{
+	    /* timer may have used feedkeys() */
+	    return FALSE;
+	}
 	if (due_time <= 0 || (msec > 0 && due_time > remaining))
 	    due_time = remaining;
-	if (WaitForCharOrMouse(due_time, &break_loop))
+	if (WaitForCharOrMouse(due_time, interrupted, ignore_input))
 	    return TRUE;
-	if (break_loop)
+	if (interrupted != NULL && *interrupted)
 	    /* Nothing available, but need to return so that side effects get
 	     * handled, such as handling a message on a channel. */
 	    return FALSE;
@@ -5384,7 +5821,7 @@ WaitForChar(long msec)
     }
     return FALSE;
 #else
-    return WaitForCharOrMouse(msec, NULL);
+    return WaitForCharOrMouse(msec, interrupted, ignore_input);
 #endif
 }
 
@@ -5392,10 +5829,13 @@ WaitForChar(long msec)
  * Wait "msec" msec until a character is available from the mouse or keyboard
  * or from inbuf[].
  * "msec" == -1 will block forever.
+ * for "ignore_input" see WaitForCharOr().
+ * "interrupted" (if not NULL) is set to TRUE when no character is available
+ * but something else needs to be done.
  * When a GUI is being used, this will never get called -- webb
  */
     static int
-WaitForCharOrMouse(long msec, int *break_loop)
+WaitForCharOrMouse(long msec, int *interrupted, int ignore_input)
 {
 #ifdef FEAT_MOUSE_GPM
     int		gpm_process_wanted;
@@ -5405,7 +5845,7 @@ WaitForCharOrMouse(long msec, int *break_loop)
 #endif
     int		avail;
 
-    if (input_available())	    /* something in inbuf[] */
+    if (!ignore_input && input_available())	    /* something in inbuf[] */
 	return 1;
 
 #if defined(FEAT_MOUSE_DEC)
@@ -5442,13 +5882,13 @@ WaitForCharOrMouse(long msec, int *break_loop)
 # ifdef FEAT_MOUSE_GPM
 	gpm_process_wanted = 0;
 	avail = RealWaitForChar(read_cmd_fd, msec,
-					     &gpm_process_wanted, break_loop);
+					     &gpm_process_wanted, interrupted);
 # else
-	avail = RealWaitForChar(read_cmd_fd, msec, NULL, break_loop);
+	avail = RealWaitForChar(read_cmd_fd, msec, NULL, interrupted);
 # endif
 	if (!avail)
 	{
-	    if (input_available())
+	    if (!ignore_input && input_available())
 		return 1;
 # ifdef FEAT_XCLIPBOARD
 	    if (rest == 0 || !do_xterm_trace())
@@ -5467,7 +5907,7 @@ WaitForCharOrMouse(long msec, int *break_loop)
 	;
 
 #else
-    avail = RealWaitForChar(read_cmd_fd, msec, NULL, break_loop);
+    avail = RealWaitForChar(read_cmd_fd, msec, NULL, interrupted);
 #endif
     return avail;
 }
@@ -5480,13 +5920,15 @@ WaitForCharOrMouse(long msec, int *break_loop)
  * When a GUI is being used, this will not be used for input -- webb
  * Or when a Linux GPM mouse event is waiting.
  * Or when a clientserver message is on the queue.
+ * "interrupted" (if not NULL) is set to TRUE when no character is available
+ * but something else needs to be done.
  */
 #if defined(__BEOS__)
     int
 #else
     static int
 #endif
-RealWaitForChar(int fd, long msec, int *check_for_gpm UNUSED, int *break_loop)
+RealWaitForChar(int fd, long msec, int *check_for_gpm UNUSED, int *interrupted)
 {
     int		ret;
     int		result;
@@ -5496,30 +5938,14 @@ RealWaitForChar(int fd, long msec, int *check_for_gpm UNUSED, int *break_loop)
     /* May retry getting characters after an event was handled. */
 # define MAY_LOOP
 
-# if defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
+# ifdef ELAPSED_FUNC
     /* Remember at what time we started, so that we know how much longer we
      * should wait after being interrupted. */
-#  define USE_START_TV
-    struct timeval  start_tv;
+    long	    start_msec = msec;
+    ELAPSED_TYPE  start_tv;
 
-    if (msec > 0 && (
-#  ifdef FEAT_XCLIPBOARD
-	    xterm_Shell != (Widget)0
-#   if defined(USE_XSMP) || defined(FEAT_MZSCHEME)
-	    ||
-#   endif
-#  endif
-#  ifdef USE_XSMP
-	    xsmp_icefd != -1
-#   ifdef FEAT_MZSCHEME
-	    ||
-#   endif
-#  endif
-#  ifdef FEAT_MZSCHEME
-	(mzthreads_allowed() && p_mzq > 0)
-#  endif
-	    ))
-	gettimeofday(&start_tv, NULL);
+    if (msec > 0)
+	ELAPSED_INIT(start_tv);
 # endif
 
     /* Handle being called recursively.  This may happen for the session
@@ -5594,14 +6020,16 @@ RealWaitForChar(int fd, long msec, int *check_for_gpm UNUSED, int *break_loop)
 	}
 # endif
 #ifdef FEAT_JOB_CHANNEL
-	nfd = channel_poll_setup(nfd, &fds);
+	nfd = channel_poll_setup(nfd, &fds, &towait);
 #endif
+	if (interrupted != NULL)
+	    *interrupted = FALSE;
 
 	ret = poll(fds, nfd, towait);
 
 	result = ret > 0 && (fds[0].revents & POLLIN);
-	if (break_loop != NULL && ret > 0)
-	    *break_loop = TRUE;
+	if (result == 0 && interrupted != NULL && ret > 0)
+	    *interrupted = TRUE;
 
 # ifdef FEAT_MZSCHEME
 	if (ret == 0 && mzquantum_used)
@@ -5644,10 +6072,10 @@ RealWaitForChar(int fd, long msec, int *check_for_gpm UNUSED, int *break_loop)
 	}
 # endif
 #ifdef FEAT_JOB_CHANNEL
-	if (ret > 0)
+	/* also call when ret == 0, we may be polling a keep-open channel */
+	if (ret >= 0)
 	    ret = channel_poll_check(ret, &fds);
 #endif
-
 
 #else /* HAVE_SELECT */
 
@@ -5664,12 +6092,6 @@ RealWaitForChar(int fd, long msec, int *check_for_gpm UNUSED, int *break_loop)
 	    towait = p_mzq;	/* don't wait longer than 'mzquantum' */
 	    mzquantum_used = TRUE;
 	}
-# endif
-# ifdef __EMX__
-	/* don't check for incoming chars if not in raw mode, because select()
-	 * always returns TRUE then (in some version of emx.dll) */
-	if (curr_tmode != TMODE_RAW)
-	    return 0;
 # endif
 
 	if (towait >= 0)
@@ -5727,15 +6149,17 @@ select_eintr:
 	}
 # endif
 # ifdef FEAT_JOB_CHANNEL
-	maxfd = channel_select_setup(maxfd, &rfds, &wfds);
+	maxfd = channel_select_setup(maxfd, &rfds, &wfds, &tv, &tvp);
 # endif
+	if (interrupted != NULL)
+	    *interrupted = FALSE;
 
 	ret = select(maxfd + 1, &rfds, &wfds, &efds, tvp);
 	result = ret > 0 && FD_ISSET(fd, &rfds);
 	if (result)
 	    --ret;
-	if (break_loop != NULL && ret > 0)
-	    *break_loop = TRUE;
+	else if (interrupted != NULL && ret > 0)
+	    *interrupted = TRUE;
 
 # ifdef EINTR
 	if (ret == -1 && errno == EINTR)
@@ -5811,7 +6235,8 @@ select_eintr:
 	}
 # endif
 #ifdef FEAT_JOB_CHANNEL
-	if (ret > 0)
+	/* also call when ret == 0, we may be polling a keep-open channel */
+	if (ret >= 0)
 	    ret = channel_select_check(ret, &rfds, &wfds);
 #endif
 
@@ -5829,13 +6254,9 @@ select_eintr:
 	/* We're going to loop around again, find out for how long */
 	if (msec > 0)
 	{
-# ifdef USE_START_TV
-	    struct timeval  mtv;
-
+# ifdef ELAPSED_FUNC
 	    /* Compute remaining wait time. */
-	    gettimeofday(&mtv, NULL);
-	    msec -= (mtv.tv_sec - start_tv.tv_sec) * 1000L
-				   + (mtv.tv_usec - start_tv.tv_usec) / 1000L;
+	    msec = start_msec - ELAPSED_FUNC(start_tv);
 # else
 	    /* Guess we got interrupted halfway. */
 	    msec = msec / 2;
@@ -5898,123 +6319,10 @@ mch_expand_wildcards(
 {
     int		i;
     size_t	len;
+    long	llen;
     char_u	*p;
     int		dir;
-#ifdef __EMX__
-    /*
-     * This is the OS/2 implementation.
-     */
-# define EXPL_ALLOC_INC	16
-    char_u	**expl_files;
-    size_t	files_alloced, files_free;
-    char_u	*buf;
-    int		has_wildcard;
 
-    *num_file = 0;	/* default: no files found */
-    files_alloced = EXPL_ALLOC_INC; /* how much space is allocated */
-    files_free = EXPL_ALLOC_INC;    /* how much space is not used  */
-    *file = (char_u **)alloc(sizeof(char_u **) * files_alloced);
-    if (*file == NULL)
-	return FAIL;
-
-    for (; num_pat > 0; num_pat--, pat++)
-    {
-	expl_files = NULL;
-	if (vim_strchr(*pat, '$') || vim_strchr(*pat, '~'))
-	    /* expand environment var or home dir */
-	    buf = expand_env_save(*pat);
-	else
-	    buf = vim_strsave(*pat);
-	expl_files = NULL;
-	has_wildcard = mch_has_exp_wildcard(buf);  /* (still) wildcards? */
-	if (has_wildcard)   /* yes, so expand them */
-	    expl_files = (char_u **)_fnexplode(buf);
-
-	/*
-	 * return value of buf if no wildcards left,
-	 * OR if no match AND EW_NOTFOUND is set.
-	 */
-	if ((!has_wildcard && ((flags & EW_NOTFOUND) || mch_getperm(buf) >= 0))
-		|| (expl_files == NULL && (flags & EW_NOTFOUND)))
-	{   /* simply save the current contents of *buf */
-	    expl_files = (char_u **)alloc(sizeof(char_u **) * 2);
-	    if (expl_files != NULL)
-	    {
-		expl_files[0] = vim_strsave(buf);
-		expl_files[1] = NULL;
-	    }
-	}
-	vim_free(buf);
-
-	/*
-	 * Count number of names resulting from expansion,
-	 * At the same time add a backslash to the end of names that happen to
-	 * be directories, and replace slashes with backslashes.
-	 */
-	if (expl_files)
-	{
-	    for (i = 0; (p = expl_files[i]) != NULL; i++)
-	    {
-		dir = mch_isdir(p);
-		/* If we don't want dirs and this is one, skip it */
-		if ((dir && !(flags & EW_DIR)) || (!dir && !(flags & EW_FILE)))
-		    continue;
-
-		/* Skip files that are not executable if we check for that. */
-		if (!dir && (flags & EW_EXEC)
-			     && !mch_can_exe(p, NULL, !(flags & EW_SHELLCMD)))
-		    continue;
-
-		if (--files_free == 0)
-		{
-		    /* need more room in table of pointers */
-		    files_alloced += EXPL_ALLOC_INC;
-		    *file = (char_u **)vim_realloc(*file,
-					   sizeof(char_u **) * files_alloced);
-		    if (*file == NULL)
-		    {
-			EMSG(_(e_outofmem));
-			*num_file = 0;
-			return FAIL;
-		    }
-		    files_free = EXPL_ALLOC_INC;
-		}
-		slash_adjust(p);
-		if (dir)
-		{
-		    /* For a directory we add a '/', unless it's already
-		     * there. */
-		    len = STRLEN(p);
-		    if (((*file)[*num_file] = alloc(len + 2)) != NULL)
-		    {
-			STRCPY((*file)[*num_file], p);
-			if (!after_pathsep((*file)[*num_file],
-						    (*file)[*num_file] + len))
-			{
-			    (*file)[*num_file][len] = psepc;
-			    (*file)[*num_file][len + 1] = NUL;
-			}
-		    }
-		}
-		else
-		{
-		    (*file)[*num_file] = vim_strsave(p);
-		}
-
-		/*
-		 * Error message already given by either alloc or vim_strsave.
-		 * Should return FAIL, but returning OK works also.
-		 */
-		if ((*file)[*num_file] == NULL)
-		    break;
-		(*num_file)++;
-	    }
-	    _fnexplodefree((char **)expl_files);
-	}
-    }
-    return OK;
-
-#else /* __EMX__ */
     /*
      * This is the non-OS/2 implementation (really Unix).
      */
@@ -6145,7 +6453,7 @@ mch_expand_wildcards(
 	STRCAT(command, pat[0] + 1);		/* exclude first backtick */
 	p = command + STRLEN(command) - 1;
 	*p-- = ')';				/* remove last backtick */
-	while (p > command && vim_iswhite(*p))
+	while (p > command && VIM_ISWHITE(*p))
 	    --p;
 	if (*p == '&')				/* remove trailing '&' */
 	{
@@ -6298,9 +6606,13 @@ mch_expand_wildcards(
 	goto notfound;
     }
     fseek(fd, 0L, SEEK_END);
-    len = ftell(fd);			/* get size of temp file */
+    llen = ftell(fd);			/* get size of temp file */
     fseek(fd, 0L, SEEK_SET);
-    buffer = alloc(len + 1);
+    if (llen < 0)
+	/* just in case ftell() would fail */
+	buffer = NULL;
+    else
+	buffer = alloc(llen + 1);
     if (buffer == NULL)
     {
 	/* out of memory */
@@ -6309,6 +6621,7 @@ mch_expand_wildcards(
 	fclose(fd);
 	return FAIL;
     }
+    len = llen;
     i = fread((char *)buffer, 1, len, fd);
     fclose(fd);
     mch_remove(tempname);
@@ -6491,13 +6804,10 @@ notfound:
     if (flags & EW_NOTFOUND)
 	return save_patterns(num_pat, pat, num_file, file);
     return FAIL;
-
-#endif /* __EMX__ */
 }
 
 #endif /* VMS */
 
-#ifndef __EMX__
     static int
 save_patterns(
     int		num_pat,
@@ -6523,7 +6833,6 @@ save_patterns(
     *num_file = num_pat;
     return OK;
 }
-#endif
 
 /*
  * Return TRUE if the string "p" contains a wildcard that mch_expandpath() can
@@ -6532,7 +6841,7 @@ save_patterns(
     int
 mch_has_exp_wildcard(char_u *p)
 {
-    for ( ; *p; mb_ptr_adv(p))
+    for ( ; *p; MB_PTR_ADV(p))
     {
 	if (*p == '\\' && p[1] != NUL)
 	    ++p;
@@ -6556,7 +6865,7 @@ mch_has_exp_wildcard(char_u *p)
     int
 mch_has_wildcard(char_u *p)
 {
-    for ( ; *p; mb_ptr_adv(p))
+    for ( ; *p; MB_PTR_ADV(p))
     {
 	if (*p == '\\' && p[1] != NUL)
 	    ++p;
@@ -6574,7 +6883,6 @@ mch_has_wildcard(char_u *p)
     return FALSE;
 }
 
-#ifndef __EMX__
     static int
 have_wildcard(int num, char_u **file)
 {
@@ -6596,7 +6904,6 @@ have_dollars(int num, char_u **file)
 	    return TRUE;
     return FALSE;
 }
-#endif	/* ifndef __EMX__ */
 
 #if !defined(HAVE_RENAME) || defined(PROTO)
 /*
@@ -6938,7 +7245,7 @@ mch_libcall(
 	    if (argstring != NULL)
 	    {
 # if defined(USE_DLOPEN)
-		ProcAdd = (STRPROCSTR)dlsym(hinstLib, (const char *)funcname);
+		*(void **)(&ProcAdd) = dlsym(hinstLib, (const char *)funcname);
 		dlerr = (char *)dlerror();
 # else
 		if (shl_findsym(&hinstLib, (const char *)funcname,
@@ -6960,7 +7267,7 @@ mch_libcall(
 	    else
 	    {
 # if defined(USE_DLOPEN)
-		ProcAddI = (INTPROCSTR)dlsym(hinstLib, (const char *)funcname);
+		*(void **)(&ProcAddI) = dlsym(hinstLib, (const char *)funcname);
 		dlerr = (char *)dlerror();
 # else
 		if (shl_findsym(&hinstLib, (const char *)funcname,
@@ -7052,11 +7359,11 @@ setup_term_clip(void)
 #if defined(HAVE_SETJMP_H)
 	int (*oldIOhandler)();
 #endif
-# if defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
-	struct timeval  start_tv;
+# ifdef ELAPSED_FUNC
+	ELAPSED_TYPE  start_tv;
 
 	if (p_verbose > 0)
-	    gettimeofday(&start_tv, NULL);
+	    ELAPSED_INIT(start_tv);
 # endif
 
 	/* Ignore X errors while opening the display */
@@ -7098,11 +7405,11 @@ setup_term_clip(void)
 	/* Catch terminating error of the X server connection. */
 	(void)XSetIOErrorHandler(x_IOerror_handler);
 
-# if defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
+# ifdef ELAPSED_FUNC
 	if (p_verbose > 0)
 	{
 	    verbose_enter();
-	    xopen_message(&start_tv);
+	    xopen_message(ELAPSED_FUNC(start_tv));
 	    verbose_leave();
 	}
 # endif

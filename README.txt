@@ -1,4 +1,4 @@
-README.txt for version 7.4 of Vim: Vi IMproved.
+README.txt for version 8.0 of Vim: Vi IMproved.
 
 
 WHAT IS VIM?
@@ -35,6 +35,12 @@ Vim you must get either one of the binary archives or a source archive.
 Which one you need depends on the system you want to run it on and whether you
 want or must compile it yourself.  Check "http://www.vim.org/download.php" for
 an overview of currently available distributions.
+
+Some popular places to get the latest Vim:
+* Check out the git repository from github: https://github.com/vim/vim.
+* Get the source code as an archive: https://github.com/vim/vim/releases.
+* Get a Windows executable from the vim-win32-installer repository:
+  https://github.com/vim/vim-win32-installer/releases.
 
 
 COMPILING

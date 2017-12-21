@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4:
+/* vi:set ts=8 sts=4 sw=4 noet:
  *
  * VIM - Vi IMproved	by Bram Moolenaar
  *
@@ -266,7 +266,7 @@ static long char_to_long(char_u *);
 static char_u *make_percent_swname(char_u *dir, char_u *name);
 #endif
 #ifdef FEAT_CRYPT
-static cryptstate_T *ml_crypt_prepare(memfile_T *mfp, off_t offset, int reading);
+static cryptstate_T *ml_crypt_prepare(memfile_T *mfp, off_T offset, int reading);
 #endif
 #ifdef FEAT_BYTEOFF
 static void ml_updatechunk(buf_T *buf, long line, long len, int updtype);
@@ -333,7 +333,7 @@ ml_open(buf_T *buf)
 	goto error;
     if (hp->bh_bnum != 0)
     {
-	EMSG(_("E298: Didn't get block nr 0?"));
+	IEMSG(_("E298: Didn't get block nr 0?"));
 	goto error;
     }
     b0p = (ZERO_BL *)(hp->bh_data);
@@ -383,7 +383,7 @@ ml_open(buf_T *buf)
 	goto error;
     if (hp->bh_bnum != 1)
     {
-	EMSG(_("E298: Didn't get block nr 1?"));
+	IEMSG(_("E298: Didn't get block nr 1?"));
 	goto error;
     }
     pp = (PTR_BL *)(hp->bh_data);
@@ -401,7 +401,7 @@ ml_open(buf_T *buf)
 	goto error;
     if (hp->bh_bnum != 2)
     {
-	EMSG(_("E298: Didn't get block nr 2?"));
+	IEMSG(_("E298: Didn't get block nr 2?"));
 	goto error;
     }
 
@@ -739,7 +739,7 @@ ml_open_files(void)
 {
     buf_T	*buf;
 
-    for (buf = firstbuf; buf != NULL; buf = buf->b_next)
+    FOR_ALL_BUFFERS(buf)
 	if (!buf->b_p_ro || buf->b_changed)
 	    ml_open_file(buf);
 }
@@ -873,7 +873,7 @@ ml_close_all(int del_file)
 {
     buf_T	*buf;
 
-    for (buf = firstbuf; buf != NULL; buf = buf->b_next)
+    FOR_ALL_BUFFERS(buf)
 	ml_close(buf, del_file && ((buf->b_flags & BF_PRESERVED) == 0
 				 || vim_strchr(p_cpo, CPO_PRESERVE) == NULL));
 #ifdef FEAT_SPELL
@@ -893,7 +893,7 @@ ml_close_notmod(void)
 {
     buf_T	*buf;
 
-    for (buf = firstbuf; buf != NULL; buf = buf->b_next)
+    FOR_ALL_BUFFERS(buf)
 	if (!bufIsChanged(buf))
 	    ml_close(buf, TRUE);    /* close all not-modified buffers */
 }
@@ -950,7 +950,7 @@ ml_upd_block0(buf_T *buf, upd_block0_T what)
 
     b0p = (ZERO_BL *)(hp->bh_data);
     if (ml_check_b0_id(b0p) == FAIL)
-	EMSG(_("E304: ml_upd_block0(): Didn't get block 0??"));
+	IEMSG(_("E304: ml_upd_block0(): Didn't get block 0??"));
     else
     {
 	if (what == UB_FNAME)
@@ -973,7 +973,7 @@ ml_upd_block0(buf_T *buf, upd_block0_T what)
     static void
 set_b0_fname(ZERO_BL *b0p, buf_T *buf)
 {
-    struct stat	st;
+    stat_T	st;
 
     if (buf->b_ffname == NULL)
 	b0p->b0_fname[0] = NUL;
@@ -1114,7 +1114,7 @@ ml_recover(void)
     infoptr_T	*ip;
     blocknr_T	bnum;
     int		page_count;
-    struct stat	org_stat, swp_stat;
+    stat_T	org_stat, swp_stat;
     int		len;
     int		directly;
     linenr_T	lnum;
@@ -1127,7 +1127,7 @@ ml_recover(void)
     int		idx;
     int		top;
     int		txt_start;
-    off_t	size;
+    off_T	size;
     int		called_from_main;
     int		serious_error = TRUE;
     long	mtime;
@@ -1136,10 +1136,10 @@ ml_recover(void)
 
     recoverymode = TRUE;
     called_from_main = (curbuf->b_ml.ml_mfp == NULL);
-    attr = hl_attr(HLF_E);
+    attr = HL_ATTR(HLF_E);
 
     /*
-     * If the file name ends in ".s[uvw][a-z]" we assume this is the swap file.
+     * If the file name ends in ".s[a-w][a-z]" we assume this is the swap file.
      * Otherwise a search is done to find the swap file(s).
      */
     fname = curbuf->b_fname;
@@ -1148,12 +1148,13 @@ ml_recover(void)
     len = (int)STRLEN(fname);
     if (len >= 4 &&
 #if defined(VMS)
-	    STRNICMP(fname + len - 4, "_s" , 2)
+	    STRNICMP(fname + len - 4, "_s", 2)
 #else
-	    STRNICMP(fname + len - 4, ".s" , 2)
+	    STRNICMP(fname + len - 4, ".s", 2)
 #endif
-		== 0
-		&& vim_strchr((char_u *)"UVWuvw", fname[len - 2]) != NULL
+						== 0
+		&& vim_strchr((char_u *)"abcdefghijklmnopqrstuvw",
+					   TOLOWER_ASC(fname[len - 2])) != NULL
 		&& ASCII_ISALPHA(fname[len - 1]))
     {
 	directly = TRUE;
@@ -1323,7 +1324,7 @@ ml_recover(void)
 	    msg_end();
 	    goto theend;
 	}
-	if ((size = lseek(mfp->mf_fd, (off_t)0L, SEEK_END)) <= 0)
+	if ((size = vim_lseek(mfp->mf_fd, (off_T)0L, SEEK_END)) <= 0)
 	    mfp->mf_blocknr_max = 0;	    /* no file or empty file */
 	else
 	    mfp->mf_blocknr_max = (blocknr_T)(size / mfp->mf_page_size);
@@ -1519,7 +1520,7 @@ ml_recover(void)
 			    line_count = pp->pb_pointer[idx].pe_line_count;
 			    if (readfile(curbuf->b_ffname, NULL, lnum,
 					pp->pb_pointer[idx].pe_old_lnum - 1,
-					line_count, NULL, 0) == FAIL)
+					line_count, NULL, 0) != OK)
 				cannot_open = TRUE;
 			    else
 				lnum += line_count;
@@ -1649,7 +1650,7 @@ ml_recover(void)
 	if (!(curbuf->b_ml.ml_line_count == 2 && *ml_get(1) == NUL))
 	{
 	    changed_int();
-	    ++curbuf->b_changedtick;
+	    ++CHANGEDTICK(curbuf);
 	}
     }
     else
@@ -1663,7 +1664,7 @@ ml_recover(void)
 	    if (i != 0)
 	    {
 		changed_int();
-		++curbuf->b_changedtick;
+		++CHANGEDTICK(curbuf);
 		break;
 	    }
 	}
@@ -1863,8 +1864,10 @@ recover_names(
 	    else
 	    {
 #if defined(UNIX) || defined(WIN3264)
-		p = dir_name + STRLEN(dir_name);
-		if (after_pathsep(dir_name, p) && p[-1] == p[-2])
+		int	len = (int)STRLEN(dir_name);
+
+		p = dir_name + len;
+		if (after_pathsep(dir_name, p) && len > 1 && p[-1] == p[-2])
 		{
 		    /* Ends with '//', Use Full path for swap name */
 		    tail = make_percent_swname(dir_name, fname_res);
@@ -1908,7 +1911,7 @@ recover_names(
 	 */
 	if (*dirp == NUL && file_count + num_files == 0 && fname != NULL)
 	{
-	    struct stat	    st;
+	    stat_T	    st;
 	    char_u	    *swapname;
 
 	    swapname = modname(fname_res,
@@ -2026,7 +2029,7 @@ make_percent_swname(char_u *dir, char_u *name)
 	if (s != NULL)
 	{
 	    STRCPY(s, f);
-	    for (d = s; *d != NUL; mb_ptr_adv(d))
+	    for (d = s; *d != NUL; MB_PTR_ADV(d))
 		if (vim_ispathsep(*d))
 		    *d = '%';
 	    d = concat_fnames(dir, s, TRUE);
@@ -2038,7 +2041,7 @@ make_percent_swname(char_u *dir, char_u *name)
 }
 #endif
 
-#if (defined(UNIX) || defined(__EMX__) || defined(VMS)) && (defined(FEAT_GUI_DIALOG) || defined(FEAT_CON_DIALOG))
+#if (defined(UNIX) || defined(VMS)) && (defined(FEAT_GUI_DIALOG) || defined(FEAT_CON_DIALOG))
 static int process_still_running;
 #endif
 
@@ -2049,7 +2052,7 @@ static int process_still_running;
     static time_t
 swapfile_info(char_u *fname)
 {
-    struct stat	    st;
+    stat_T	    st;
     int		    fd;
     struct block0   b0;
     time_t	    x = (time_t)0;
@@ -2126,7 +2129,7 @@ swapfile_info(char_u *fname)
 		{
 		    MSG_PUTS(_("\n        process ID: "));
 		    msg_outnum(char_to_long(b0.b0_pid));
-#if defined(UNIX) || defined(__EMX__)
+#if defined(UNIX)
 		    /* EMX kill() not working correctly, it seems */
 		    if (kill((pid_t)char_to_long(b0.b0_pid), 0) == 0)
 		    {
@@ -2262,9 +2265,9 @@ end:
 ml_sync_all(int check_file, int check_char)
 {
     buf_T		*buf;
-    struct stat		st;
+    stat_T		st;
 
-    for (buf = firstbuf; buf != NULL; buf = buf->b_next)
+    FOR_ALL_BUFFERS(buf)
     {
 	if (buf->b_ml.ml_mfp == NULL || buf->b_ml.ml_mfp->mf_fname == NULL)
 	    continue;			    /* no file */
@@ -2450,7 +2453,7 @@ ml_get_buf(
 	    /* Avoid giving this message for a recursive call, may happen when
 	     * the GUI redraws part of the text. */
 	    ++recursive;
-	    EMSGN(_("E315: ml_get: invalid lnum: %ld"), lnum);
+	    IEMSGN(_("E315: ml_get: invalid lnum: %ld"), lnum);
 	    --recursive;
 	}
 errorret:
@@ -2485,7 +2488,7 @@ errorret:
 		/* Avoid giving this message for a recursive call, may happen
 		 * when the GUI redraws part of the text. */
 		++recursive;
-		EMSGN(_("E316: ml_get: cannot find line %ld"), lnum);
+		IEMSGN(_("E316: ml_get: cannot find line %ld"), lnum);
 		--recursive;
 	    }
 	    goto errorret;
@@ -2542,7 +2545,7 @@ ml_append(
     return ml_append_int(curbuf, lnum, line, len, newfile, FALSE);
 }
 
-#if defined(FEAT_SPELL) || defined(PROTO)
+#if defined(FEAT_SPELL) || defined(FEAT_QUICKFIX) || defined(PROTO)
 /*
  * Like ml_append() but for an arbitrary buffer.  The buffer must already have
  * a memline.
@@ -2899,7 +2902,7 @@ ml_append_int(
 	    pp = (PTR_BL *)(hp->bh_data);   /* must be pointer block */
 	    if (pp->pb_id != PTR_ID)
 	    {
-		EMSG(_("E317: pointer block id wrong 3"));
+		IEMSG(_("E317: pointer block id wrong 3"));
 		mf_put(mfp, hp, FALSE, FALSE);
 		return FAIL;
 	    }
@@ -3041,7 +3044,7 @@ ml_append_int(
 	 */
 	if (stack_idx < 0)
 	{
-	    EMSG(_("E318: Updated too many blocks?"));
+	    IEMSG(_("E318: Updated too many blocks?"));
 	    buf->b_ml.ml_stack_top = 0;	/* invalidate stack */
 	}
     }
@@ -3109,7 +3112,8 @@ ml_replace(linenr_T lnum, char_u *line, int copy)
 }
 
 /*
- * Delete line 'lnum' in the current buffer.
+ * Delete line "lnum" in the current buffer.
+ * When "message" is TRUE may give a "No lines in buffer" message.
  *
  * Check: The caller of this function should probably also call
  * deleted_lines() after this.
@@ -3219,7 +3223,7 @@ ml_delete_int(buf_T *buf, linenr_T lnum, int message)
 	    pp = (PTR_BL *)(hp->bh_data);   /* must be pointer block */
 	    if (pp->pb_id != PTR_ID)
 	    {
-		EMSG(_("E317: pointer block id wrong 4"));
+		IEMSG(_("E317: pointer block id wrong 4"));
 		mf_put(mfp, hp, FALSE, FALSE);
 		return FAIL;
 	    }
@@ -3431,7 +3435,7 @@ ml_flush_line(buf_T *buf)
 
 	hp = ml_find_line(buf, lnum, ML_FIND);
 	if (hp == NULL)
-	    EMSGN(_("E320: Cannot find line %ld"), lnum);
+	    IEMSGN(_("E320: Cannot find line %ld"), lnum);
 	else
 	{
 	    dp = (DATA_BL *)(hp->bh_data);
@@ -3673,7 +3677,7 @@ ml_find_line(buf_T *buf, linenr_T lnum, int action)
 	pp = (PTR_BL *)(dp);		/* must be pointer block */
 	if (pp->pb_id != PTR_ID)
 	{
-	    EMSG(_("E317: pointer block id wrong"));
+	    IEMSG(_("E317: pointer block id wrong"));
 	    goto error_block;
 	}
 
@@ -3718,11 +3722,11 @@ ml_find_line(buf_T *buf, linenr_T lnum, int action)
 	if (idx >= (int)pp->pb_count)	    /* past the end: something wrong! */
 	{
 	    if (lnum > buf->b_ml.ml_line_count)
-		EMSGN(_("E322: line number out of range: %ld past the end"),
+		IEMSGN(_("E322: line number out of range: %ld past the end"),
 					      lnum - buf->b_ml.ml_line_count);
 
 	    else
-		EMSGN(_("E323: line count wrong in block %ld"), bnum);
+		IEMSGN(_("E323: line count wrong in block %ld"), bnum);
 	    goto error_block;
 	}
 	if (action == ML_DELETE)
@@ -3816,7 +3820,7 @@ ml_lineadd(buf_T *buf, int count)
 	if (pp->pb_id != PTR_ID)
 	{
 	    mf_put(mfp, hp, FALSE, FALSE);
-	    EMSG(_("E317: pointer block id wrong 2"));
+	    IEMSG(_("E317: pointer block id wrong 2"));
 	    break;
 	}
 	pp->pb_pointer[ip->ip_index].pe_line_count += count;
@@ -3921,8 +3925,10 @@ makeswapname(
 #endif
 
 #if defined(UNIX) || defined(WIN3264)  /* Need _very_ long file names */
-    s = dir_name + STRLEN(dir_name);
-    if (after_pathsep(dir_name, s) && s[-1] == s[-2])
+    int		len = (int)STRLEN(dir_name);
+
+    s = dir_name + len;
+    if (after_pathsep(dir_name, s) && len > 1 && s[-1] == s[-2])
     {			       /* Ends with '//', Use Full path */
 	r = NULL;
 	if ((s = make_percent_swname(dir_name, fname)) != NULL)
@@ -4010,7 +4016,7 @@ get_file_in_dir(
 
 #ifdef WIN3264
     if (retval != NULL)
-	for (t = gettail(retval); *t != NUL; mb_ptr_adv(t))
+	for (t = gettail(retval); *t != NUL; MB_PTR_ADV(t))
 	    if (*t == ':')
 		*t = '%';
 #endif
@@ -4028,7 +4034,7 @@ attention_message(
     buf_T   *buf,	/* buffer being edited */
     char_u  *fname)	/* swap file name */
 {
-    struct stat st;
+    stat_T	st;
     time_t	x, sx;
     char	*p;
 
@@ -4149,7 +4155,7 @@ findswapname(
 	if (buf_fname == NULL)
 	    buf_fname = buf->b_fname;
 	else
-	    for (t = gettail(buf_fname); *t != NUL; mb_ptr_adv(t))
+	    for (t = gettail(buf_fname); *t != NUL; MB_PTR_ADV(t))
 		if (*t == ':')
 		    *t = '%';
     }
@@ -4206,7 +4212,7 @@ findswapname(
 	{
 	    char_u	    *tail;
 	    char_u	    *fname2;
-	    struct stat	    s1, s2;
+	    stat_T	    s1, s2;
 	    int		    f1, f2;
 	    int		    created1 = FALSE, created2 = FALSE;
 	    int		    same = FALSE;
@@ -4295,7 +4301,7 @@ findswapname(
 	if (mch_getperm(fname) < 0)	/* it does not exist */
 	{
 #ifdef HAVE_LSTAT
-	    struct stat sb;
+	    stat_T	sb;
 
 	    /*
 	     * Extra security check: When a swap file is a symbolic link, this
@@ -4444,7 +4450,7 @@ findswapname(
 		    }
 #endif
 
-#if (defined(UNIX) || defined(__EMX__) || defined(VMS)) && (defined(FEAT_GUI_DIALOG) || defined(FEAT_CON_DIALOG))
+#if (defined(UNIX) || defined(VMS)) && (defined(FEAT_GUI_DIALOG) || defined(FEAT_CON_DIALOG))
 		    process_still_running = FALSE;
 #endif
 #ifdef FEAT_AUTOCMD
@@ -4496,13 +4502,13 @@ findswapname(
 				    name == NULL
 					?  (char_u *)_("Swap file already exists!")
 					: name,
-# if defined(UNIX) || defined(__EMX__) || defined(VMS)
+# if defined(UNIX) || defined(VMS)
 				    process_still_running
 					? (char_u *)_("&Open Read-Only\n&Edit anyway\n&Recover\n&Quit\n&Abort") :
 # endif
 					(char_u *)_("&Open Read-Only\n&Edit anyway\n&Recover\n&Delete it\n&Quit\n&Abort"), 1, NULL, FALSE);
 
-# if defined(UNIX) || defined(__EMX__) || defined(VMS)
+# if defined(UNIX) || defined(VMS)
 			if (process_still_running && choice >= 4)
 			    choice++;	/* Skip missing "Delete it" button */
 # endif
@@ -4662,7 +4668,7 @@ fnamecmp_ino(
     char_u	*fname_s,	    /* file name from swap file */
     long	ino_block0)
 {
-    struct stat	st;
+    stat_T	st;
     ino_t	ino_c = 0;	    /* ino of current file */
     ino_t	ino_s;		    /* ino of file from swap file */
     char_u	buf_c[MAXPATHL];    /* full path of fname_c */
@@ -4779,7 +4785,7 @@ ml_setflags(buf_T *buf)
 ml_encrypt_data(
     memfile_T	*mfp,
     char_u	*data,
-    off_t	offset,
+    off_T	offset,
     unsigned	size)
 {
     DATA_BL	*dp = (DATA_BL *)data;
@@ -4824,7 +4830,7 @@ ml_encrypt_data(
 ml_decrypt_data(
     memfile_T	*mfp,
     char_u	*data,
-    off_t	offset,
+    off_T	offset,
     unsigned	size)
 {
     DATA_BL	*dp = (DATA_BL *)data;
@@ -4858,7 +4864,7 @@ ml_decrypt_data(
  * Return an allocated cryptstate_T *.
  */
     static cryptstate_T *
-ml_crypt_prepare(memfile_T *mfp, off_t offset, int reading)
+ml_crypt_prepare(memfile_T *mfp, off_T offset, int reading)
 {
     buf_T	*buf = mfp->mf_buffer;
     char_u	salt[50];

@@ -18,6 +18,28 @@ func Test_assert_equal()
   call assert_equal(4, n)
   let l = [1, 2, 3]
   call assert_equal([1, 2, 3], l)
+
+  let s = 'foo'
+  call assert_equal('bar', s)
+  call assert_match("Expected 'bar' but got 'foo'", v:errors[0])
+  call remove(v:errors, 0)
+endfunc
+
+func Test_assert_notequal()
+  let n = 4
+  call assert_notequal('foo', n)
+  let s = 'foo'
+  call assert_notequal([1, 2, 3], s)
+
+  call assert_notequal('foo', s)
+  call assert_match("Expected not equal to 'foo'", v:errors[0])
+  call remove(v:errors, 0)
+endfunc
+
+func Test_assert_report()
+  call assert_report('something is wrong')
+  call assert_match('something is wrong', v:errors[0])
+  call remove(v:errors, 0)
 endfunc
 
 func Test_assert_exception()
@@ -74,12 +96,50 @@ func Test_match()
   call remove(v:errors, 0)
 endfunc
 
+func Test_notmatch()
+  call assert_notmatch('foo', 'bar')
+  call assert_notmatch('^foobar$', 'foobars')
+
+  call assert_notmatch('foo', 'foobar')
+  call assert_match("Pattern 'foo' does match 'foobar'", v:errors[0])
+  call remove(v:errors, 0)
+endfunc
+
 func Test_assert_fail_fails()
   call assert_fails('xxx', {})
   call assert_match("Expected {} but got 'E731:", v:errors[0])
   call remove(v:errors, 0)
 endfunc
 
+func Test_assert_inrange()
+  call assert_inrange(7, 7, 7)
+  call assert_inrange(5, 7, 5)
+  call assert_inrange(5, 7, 6)
+  call assert_inrange(5, 7, 7)
+
+  call assert_inrange(5, 7, 4)
+  call assert_match("Expected range 5 - 7, but got 4", v:errors[0])
+  call remove(v:errors, 0)
+  call assert_inrange(5, 7, 8)
+  call assert_match("Expected range 5 - 7, but got 8", v:errors[0])
+  call remove(v:errors, 0)
+
+  call assert_fails('call assert_inrange(1, 1)', 'E119:')
+endfunc
+
+func Test_assert_with_msg()
+  call assert_equal('foo', 'bar', 'testing')
+  call assert_match("testing: Expected 'foo' but got 'bar'", v:errors[0])
+  call remove(v:errors, 0)
+endfunc
+
+func Test_override()
+  call test_override('char_avail', 1)
+  call test_override('redraw', 1)
+  call test_override('ALL', 0)
+  call assert_fails("call test_override('xxx', 1)", 'E475')
+  call assert_fails("call test_override('redraw', 'yes')", 'E474')
+endfunc
 
 func Test_user_is_happy()
   smile

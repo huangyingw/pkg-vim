@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4:
+/* vi:set ts=8 sts=4 sw=4 noet:
  *
  * VIM - Vi IMproved	by Bram Moolenaar
  *			Visual Workshop integration by Gordon Prieur
@@ -33,7 +33,6 @@
 
 #include "vim.h"
 #include "version.h"
-#include "gui_beval.h"
 #include "workshop.h"
 
 void		 workshop_hotkeys(Boolean);
@@ -48,7 +47,7 @@ static char	*append_selection(int, char *, int *, int *);
 static void	 load_buffer_by_name(char *, int);
 static void	 load_window(char *, int lnum);
 static void	 warp_to_pc(int);
-#ifdef FEAT_BEVAL
+#ifdef FEAT_BEVAL_GUI
 void		 workshop_beval_cb(BalloonEval *, int);
 static int	 computeIndex(int, char_u *, int);
 #endif
@@ -71,7 +70,7 @@ static Boolean	 workshopHotKeysEnabled = False;
 
 /*
  * The following enum is from <gp_dbx/gp_dbx_common.h>. We can't include it
- * here because its C++.
+ * here because it's C++.
  */
 enum
 {
@@ -208,7 +207,7 @@ workshop_load_file(
 	wstrace("workshop_load_file(%s, %d)\n", filename, line);
 #endif
 
-#ifdef FEAT_BEVAL
+#ifdef FEAT_BEVAL_GUI
     bevalServers |= BEVAL_WORKSHOP;
 #endif
 
@@ -1087,7 +1086,7 @@ workshop_get_positions(
     *curCol = curwin->w_cursor.col;
 
     if (curbuf->b_visual.vi_mode == 'v' &&
-	    equalpos(curwin->w_cursor, curbuf->b_visual.vi_end))
+	    EQUAL_POS(curwin->w_cursor, curbuf->b_visual.vi_end))
     {
 	*selStartLine = curbuf->b_visual.vi_start.lnum;
 	*selStartCol = curbuf->b_visual.vi_start.col;
@@ -1265,7 +1264,6 @@ load_window(
     }
     else
     {
-#ifdef FEAT_WINDOWS
 	/* buf is in a window */
 	if (win != curwin)
 	{
@@ -1273,7 +1271,6 @@ load_window(
 	    /* wsdebug("load_window: window enter %s\n",
 		    win->w_buffer->b_sfname); */
 	}
-#endif
 	if (lnum > 0 && win->w_cursor.lnum != lnum)
 	{
 	    warp_to_pc(lnum);
@@ -1319,7 +1316,7 @@ get_window(
 {
     win_T	*wp = NULL;	/* window filename is in */
 
-    for (wp = firstwin; wp != NULL; wp = W_NEXT(wp))
+    FOR_ALL_WINDOWS(wp)
 	if (buf == wp->w_buffer)
 	    break;
     return wp;
@@ -1499,7 +1496,7 @@ fixAccelText(
 	return NULL;
 }
 
-#ifdef FEAT_BEVAL
+#ifdef FEAT_BEVAL_GUI
     void
 workshop_beval_cb(
 	BalloonEval	*beval,
@@ -1752,7 +1749,7 @@ setDollarVim(
  *			directory. This is a Sun Visual WorkShop requirement!
  *
  * Note:		We override a user's $VIM because it won't have the
- *			WorkShop specific files. S/he may not like this but its
+ *			WorkShop specific files. S/he may not like this but it's
  *			better than getting the wrong files (especially as the
  *			user is likely to have $VIM set to 5.4 or later).
  */

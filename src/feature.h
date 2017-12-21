@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4:
+/* vi:set ts=8 sts=4 sw=4 noet:
  *
  * VIM - Vi IMproved		by Bram Moolenaar
  *
@@ -56,16 +56,15 @@
 /*
  * For Unix, Mac and Win32 use +huge by default.  These days CPUs are fast and
  * Memory is cheap.
- * Use +big for older systems: Other MS-Windows, dos32, OS/2 and VMS.
- * The dos16 version has very little RAM available, use +small.
+ * Use +big for older systems: Other MS-Windows and VMS.
  * Otherwise use +normal
  */
 #if !defined(FEAT_TINY) && !defined(FEAT_SMALL) && !defined(FEAT_NORMAL) \
 	&& !defined(FEAT_BIG) && !defined(FEAT_HUGE)
-# if defined(UNIX) || defined(WIN3264) || defined(MACOS)
+# if defined(UNIX) || defined(WIN3264) || defined(MACOS_X)
 #  define FEAT_HUGE
 # else
-#  if defined(MSWIN) || defined(VMS) || defined(MACOS) || defined(AMIGA)
+#  if defined(MSWIN) || defined(VMS) || defined(AMIGA)
 #   define FEAT_BIG
 #  else
 #   define FEAT_NORMAL
@@ -95,13 +94,11 @@
  */
 
 /*
+ * These features used to be optional but are now always enabled.
  * +windows		Multiple windows.  Without this there is no help
  *			window and no status lines.
  * +vertsplit		Vertically split windows.
  */
-#ifdef FEAT_SMALL
-# define FEAT_WINDOWS
-#endif
 
 /*
  * +listcmds		Vim commands for the buffer list and the argument
@@ -135,8 +132,8 @@
 # define FEAT_JUMPLIST
 #endif
 
-/* the cmdline-window requires FEAT_WINDOWS and FEAT_CMDHIST */
-#if defined(FEAT_WINDOWS) && defined(FEAT_CMDHIST)
+/* the cmdline-window requires FEAT_CMDHIST */
+#if defined(FEAT_CMDHIST)
 # define FEAT_CMDWIN
 #endif
 
@@ -333,7 +330,7 @@
  * sorted by character values.  I'm not sure how to fix this. Should we really
  * do a EBCDIC to ASCII conversion for this??
  */
-#if defined(FEAT_NORMAL) && !defined(EBCDIC)
+#if !defined(EBCDIC)
 # define FEAT_TAG_BINS
 #endif
 
@@ -362,11 +359,15 @@
  * +eval		Built-in script language and expression evaluation,
  *			":let", ":if", etc.
  * +float		Floating point variables.
+ * +num64		64-bit Number.
  */
 #ifdef FEAT_NORMAL
 # define FEAT_EVAL
-# if defined(HAVE_FLOAT_FUNCS) || defined(WIN3264) || defined(MACOS)
+# if defined(HAVE_FLOAT_FUNCS) || defined(WIN3264) || defined(MACOS_X)
 #  define FEAT_FLOAT
+# endif
+# if defined(HAVE_STDINT_H) || defined(WIN3264) || (VIM_SIZEOF_LONG >= 8)
+#  define FEAT_NUM64
 # endif
 #endif
 
@@ -449,7 +450,7 @@
  * +diff		Displaying diffs in a nice way.
  *			Requires +windows and +autocmd.
  */
-#if defined(FEAT_NORMAL) && defined(FEAT_WINDOWS) && defined(FEAT_AUTOCMD)
+#if defined(FEAT_NORMAL) && defined(FEAT_AUTOCMD)
 # define FEAT_DIFF
 #endif
 
@@ -487,7 +488,7 @@
 /*
  * +wildmenu		'wildmenu' option
  */
-#if defined(FEAT_NORMAL) && defined(FEAT_WINDOWS)
+#if defined(FEAT_NORMAL)
 # define FEAT_WILDMENU
 #endif
 
@@ -592,7 +593,7 @@
  * +mksession		":mksession" command.
  *			Requires +windows and +vertsplit.
  */
-#if defined(FEAT_NORMAL) && defined(FEAT_WINDOWS)
+#if defined(FEAT_NORMAL)
 # define FEAT_SESSION
 #endif
 
@@ -634,7 +635,8 @@
 /* #define FEAT_MBYTE_IME */
 # endif
 
-#if defined(FEAT_MBYTE_IME) && !defined(FEAT_MBYTE)
+/* Input methods are only useful with +multi_byte. */
+#if (defined(FEAT_MBYTE_IME) || defined(FEAT_XIM)) && !defined(FEAT_MBYTE)
 # define FEAT_MBYTE
 #endif
 
@@ -703,14 +705,14 @@
 /*
  * +scrollbind		synchronization of split windows
  */
-#if defined(FEAT_NORMAL) && defined(FEAT_WINDOWS)
+#if defined(FEAT_NORMAL)
 # define FEAT_SCROLLBIND
 #endif
 
 /*
  * +cursorbind		synchronization of split windows
  */
-#if defined(FEAT_NORMAL) && defined(FEAT_WINDOWS)
+#if defined(FEAT_NORMAL)
 # define FEAT_CURSORBIND
 #endif
 
@@ -751,7 +753,7 @@
 /*
  * GUI tabline
  */
-#if defined(FEAT_WINDOWS) && defined(FEAT_NORMAL) \
+#if defined(FEAT_NORMAL) \
     && (defined(FEAT_GUI_GTK) \
 	|| (defined(FEAT_GUI_MOTIF) && defined(HAVE_XM_NOTEBOOK_H)) \
 	|| defined(FEAT_GUI_MAC) \
@@ -776,7 +778,7 @@
  * there is no terminal version, and on Windows we can't figure out how to
  * fork one off with :gui.
  */
-#if defined(FEAT_GUI_MSWIN) || (defined(FEAT_GUI_MAC) && !defined(MACOS_X_UNIX))
+#if defined(FEAT_GUI_MSWIN) || (defined(FEAT_GUI_MAC) && !defined(MACOS_X_DARWIN))
 # define ALWAYS_USE_GUI
 #endif
 
@@ -812,6 +814,13 @@
 # ifndef ALWAYS_USE_GUI
 #  define FEAT_CON_DIALOG
 # endif
+#endif
+
+/*
+ * +termguicolors	'termguicolors' option.
+ */
+#if (defined(FEAT_BIG) && defined(FEAT_SYN_HL)) && !defined(ALWAYS_USE_GUI)
+# define FEAT_TERMGUICOLORS
 #endif
 
 /* Mac specific thing: Codewarrior interface. */
@@ -894,6 +903,11 @@
 /* #define USR_VIMRC_FILE	"~/foo/.vimrc" */
 /* #define USR_VIMRC_FILE2	"~/bar/.vimrc" */
 /* #define USR_VIMRC_FILE3	"$VIM/.vimrc" */
+
+/*
+ * VIM_DEFAULTS_FILE	Name of the defaults.vim script file
+ */
+/* #define VIM_DEFAULTS_FILE	"$VIMRUNTIME/defaults.vim" */
 
 /*
  * EVIM_FILE		Name of the evim.vim script file
@@ -1155,6 +1169,20 @@
 #endif
 
 /*
+ * +autoservername	Automatically generate a servername for clientserver
+ *			when --servername is not passed on the command line.
+ */
+#if defined(FEAT_CLIENTSERVER) && !defined(FEAT_AUTOSERVERNAME)
+# ifdef WIN3264
+    /* Always enabled on MS-Windows. */
+#  define FEAT_AUTOSERVERNAME
+# else
+    /* Enable here if you don't use configure. */
+/* # define FEAT_AUTOSERVERNAME */
+# endif
+#endif
+
+/*
  * +termresponse	send t_RV to obtain terminal response.  Used for xterm
  *			to check if mouse dragging can be used and if term
  *			codes can be obtained.
@@ -1253,6 +1281,18 @@
 #endif
 
 /*
+ * +terminal		":terminal" command.  Runs a terminal in a window.
+ *			requires +channel and +multibyte
+ */
+#if defined(FEAT_TERMINAL) && \
+	!(defined(FEAT_JOB_CHANNEL) && defined(FEAT_MBYTE))
+# undef FEAT_TERMINAL
+#endif
+#if defined(FEAT_TERMINAL) && !defined(CURSOR_SHAPE)
+# define CURSOR_SHAPE
+#endif
+
+/*
  * +signs		Allow signs to be displayed to the left of text lines.
  *			Adds the ":sign" command.
  */
@@ -1278,15 +1318,26 @@
 		&& !defined(FEAT_GUI_GTK) && !defined(FEAT_GUI_W32)) \
 	    || defined(FEAT_SUN_WORKSHOP) \
 	    || defined(FEAT_NETBEANS_INTG) || defined(FEAT_EVAL))
-# define FEAT_BEVAL
+# define FEAT_BEVAL_GUI
 # if !defined(FEAT_XFONTSET) && !defined(FEAT_GUI_GTK) \
 	&& !defined(FEAT_GUI_W32)
 #  define FEAT_XFONTSET
 # endif
 #endif
 
-#if defined(FEAT_BEVAL) && (defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA))
+#if defined(FEAT_BEVAL_GUI) && (defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA))
 # define FEAT_BEVAL_TIP		/* balloon eval used for toolbar tooltip */
+#endif
+
+/*
+ * +balloon_eval_term	Allow balloon expression evaluation in the terminal.
+ */
+#if defined(FEAT_HUGE) && defined(UNIX) && defined(FEAT_TIMERS)
+# define FEAT_BEVAL_TERM
+#endif
+
+#if defined(FEAT_BEVAL_GUI) || defined(FEAT_BEVAL_TERM)
+# define FEAT_BEVAL
 #endif
 
 /* both Motif and Athena are X11 and share some code */

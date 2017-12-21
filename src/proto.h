@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4:
+/* vi:set ts=8 sts=4 sw=4 noet:
  *
  * VIM - Vi IMproved	by Bram Moolenaar
  *
@@ -35,7 +35,7 @@
 # ifdef AMIGA
 #  include "os_amiga.pro"
 # endif
-# if defined(UNIX) || defined(__EMX__) || defined(VMS)
+# if defined(UNIX) || defined(VMS)
 #  include "os_unix.pro"
 # endif
 # ifdef WIN3264
@@ -67,10 +67,12 @@ extern int _stricoll(char *a, char *b);
 # ifdef FEAT_CSCOPE
 #  include "if_cscope.pro"
 # endif
+# include "dict.pro"
 # include "diff.pro"
 # include "digraph.pro"
 # include "edit.pro"
 # include "eval.pro"
+# include "evalfunc.pro"
 # include "ex_cmds.pro"
 # include "ex_cmds2.pro"
 # include "ex_docmd.pro"
@@ -85,12 +87,19 @@ extern int _stricoll(char *a, char *b);
 # include "hardcopy.pro"
 # include "hashtab.pro"
 # include "json.pro"
+# include "list.pro"
 # include "main.pro"
 # include "mark.pro"
 # include "memfile.pro"
 # include "memline.pro"
 # ifdef FEAT_MENU
 #  include "menu.pro"
+# endif
+# ifdef FEAT_FKMAP
+#  include "farsi.pro"
+# endif
+# ifdef FEAT_ARABIC
+#  include "arabic.pro"
 # endif
 
 /* These prototypes cannot be produced automatically. */
@@ -118,7 +127,8 @@ _RTLENTRYF
 #  endif
 vim_snprintf(char *, size_t, char *, ...);
 
-int vim_vsnprintf(char *str, size_t str_m, char *fmt, va_list ap, typval_T *tvs);
+int vim_vsnprintf(char *str, size_t str_m, char *fmt, va_list ap);
+int vim_vsnprintf_typval(char *str, size_t str_m, char *fmt, va_list ap, typval_T *tvs);
 
 # include "message.pro"
 # include "misc1.pro"
@@ -149,14 +159,19 @@ void qsort(void *base, size_t elm_count, size_t elm_size, int (*cmp)(const void 
 # endif
 # include "search.pro"
 # include "spell.pro"
+# include "spellfile.pro"
 # include "syntax.pro"
 # include "tag.pro"
 # include "term.pro"
+# ifdef FEAT_TERMINAL
+#  include "terminal.pro"
+# endif
 # if defined(HAVE_TGETENT) && (defined(AMIGA) || defined(VMS))
 #  include "termlib.pro"
 # endif
 # include "ui.pro"
 # include "undo.pro"
+# include "userfunc.pro"
 # include "version.pro"
 # include "window.pro"
 
@@ -186,7 +201,9 @@ void qsort(void *base, size_t elm_count, size_t elm_size, int (*cmp)(const void 
 
 /* Ugly solution for "BalloonEval" not being defined while it's used in some
  * .pro files. */
-# ifndef FEAT_BEVAL
+# ifdef FEAT_BEVAL
+#  include "beval.pro"
+# else
 #  define BalloonEval int
 # endif
 
@@ -197,15 +214,18 @@ void qsort(void *base, size_t elm_count, size_t elm_size, int (*cmp)(const void 
 #  include "channel.pro"
 # endif
 
-# ifdef FEAT_GUI
-#  include "gui.pro"
-#  if defined(UNIX) || defined(MACOS)
+# if defined(FEAT_GUI) || defined(FEAT_JOB_CHANNEL)
+#  if defined(UNIX) || defined(MACOS_X)
 #   include "pty.pro"
 #  endif
+# endif
+
+# ifdef FEAT_GUI
+#  include "gui.pro"
 #  if !defined(HAVE_SETENV) && !defined(HAVE_PUTENV) && !defined(VMS)
-extern int putenv(const char *string);		/* from pty.c */
+extern int putenv(const char *string);			/* in misc2.c */
 #   ifdef USE_VIMPTY_GETENV
-extern char_u *vimpty_getenv(const char_u *string);	/* from pty.c */
+extern char_u *vimpty_getenv(const char_u *string);	/* in misc2.c */
 #   endif
 #  endif
 #  ifdef FEAT_GUI_W32
@@ -268,7 +288,7 @@ extern char *vim_SelFile(Widget toplevel, char *prompt, char *init_path, int (*s
 #ifdef MACOS_CONVERT
 # include "os_mac_conv.pro"
 #endif
-#if defined(MACOS_X_UNIX) && defined(FEAT_CLIPBOARD) && !defined(FEAT_GUI)
+#if defined(MACOS_X_DARWIN) && defined(FEAT_CLIPBOARD) && !defined(FEAT_GUI)
 /* functions in os_macosx.m */
 void clip_mch_lose_selection(VimClipboard *cbd);
 int clip_mch_own_selection(VimClipboard *cbd);

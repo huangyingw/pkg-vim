@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4:
+/* vi:set ts=8 sts=4 sw=4 noet:
  *
  * VIM - Vi IMproved	by Bram Moolenaar
  *
@@ -131,6 +131,7 @@ do_debug(char_u *cmd)
     redir_off = TRUE;		/* don't redirect debug commands */
 
     State = NORMAL;
+    debug_mode = TRUE;
 
     if (!debug_did_msg)
 	MSG(_("Entering Debug mode.  Type \"cont\" to continue."));
@@ -164,6 +165,7 @@ do_debug(char_u *cmd)
 	    ignore_script = TRUE;
 	}
 
+	vim_free(cmdline);
 	cmdline = getcmdline_prompt('>', NULL, 0, EXPAND_NOTHING, NULL);
 
 	if (typeahead_saved)
@@ -306,8 +308,6 @@ do_debug(char_u *cmd)
 	    (void)do_cmdline(cmdline, getexline, NULL,
 						DOCMD_VERBOSE|DOCMD_EXCRESET);
 	    debug_break_level = n;
-
-	    vim_free(cmdline);
 	}
 	lines_left = Rows - 1;
     }
@@ -320,6 +320,7 @@ do_debug(char_u *cmd)
     msg_scroll = save_msg_scroll;
     lines_left = Rows - 1;
     State = save_State;
+    debug_mode = FALSE;
     did_emsg = save_did_emsg;
     cmd_silent = save_cmd_silent;
     msg_silent = save_msg_silent;
@@ -335,9 +336,8 @@ do_debug(char_u *cmd)
 get_maxbacktrace_level(void)
 {
     char	*p, *q;
-    int		maxbacktrace = 1;
+    int		maxbacktrace = 0;
 
-    maxbacktrace = 0;
     if (sourcing_name != NULL)
     {
 	p = (char *)sourcing_name;
@@ -1090,7 +1090,26 @@ profile_zero(proftime_T *tm)
 
 # if defined(FEAT_TIMERS) || defined(PROTO)
 static timer_T	*first_timer = NULL;
-static int	last_timer_id = 0;
+static long	last_timer_id = 0;
+
+    static long
+proftime_time_left(proftime_T *due, proftime_T *now)
+{
+#  ifdef WIN3264
+    LARGE_INTEGER fr;
+
+    if (now->QuadPart > due->QuadPart)
+	return 0;
+    QueryPerformanceFrequency(&fr);
+    return (long)(((double)(due->QuadPart - now->QuadPart)
+		   / (double)fr.QuadPart) * 1000);
+#  else
+    if (now->tv_sec > due->tv_sec)
+	return 0;
+    return (due->tv_sec - now->tv_sec) * 1000
+	+ (due->tv_usec - now->tv_usec) / 1000;
+#  endif
+}
 
 /*
  * Insert a timer in the list of timers.
@@ -1103,6 +1122,7 @@ insert_timer(timer_T *timer)
     if (first_timer != NULL)
 	first_timer->tr_prev = timer;
     first_timer = timer;
+    did_add_timer = TRUE;
 }
 
 /*
@@ -1122,8 +1142,7 @@ remove_timer(timer_T *timer)
     static void
 free_timer(timer_T *timer)
 {
-    vim_free(timer->tr_callback);
-    partial_unref(timer->tr_partial);
+    free_callback(timer->tr_callback, timer->tr_partial);
     vim_free(timer);
 }
 
@@ -1135,16 +1154,18 @@ free_timer(timer_T *timer)
 create_timer(long msec, int repeat)
 {
     timer_T	*timer = (timer_T *)alloc_clear(sizeof(timer_T));
+    long	prev_id = last_timer_id;
 
     if (timer == NULL)
 	return NULL;
-    timer->tr_id = ++last_timer_id;
+    if (++last_timer_id <= prev_id)
+	/* Overflow!  Might cause duplicates... */
+	last_timer_id = 0;
+    timer->tr_id = last_timer_id;
     insert_timer(timer);
     if (repeat != 0)
-    {
 	timer->tr_repeat = repeat - 1;
-	timer->tr_interval = msec;
-    }
+    timer->tr_interval = msec;
 
     profile_setlimit(msec, &timer->tr_due);
     return timer;
@@ -1161,11 +1182,11 @@ timer_callback(timer_T *timer)
     typval_T	argv[2];
 
     argv[0].v_type = VAR_NUMBER;
-    argv[0].vval.v_number = timer->tr_id;
+    argv[0].vval.v_number = (varnumber_T)timer->tr_id;
     argv[1].v_type = VAR_UNKNOWN;
 
     call_func(timer->tr_callback, (int)STRLEN(timer->tr_callback),
-			&rettv, 1, argv, 0L, 0L, &dummy, TRUE,
+			&rettv, 1, argv, NULL, 0L, 0L, &dummy, TRUE,
 			timer->tr_partial, NULL);
     clear_tv(&rettv);
 }
@@ -1173,75 +1194,142 @@ timer_callback(timer_T *timer)
 /*
  * Call timers that are due.
  * Return the time in msec until the next timer is due.
+ * Returns -1 if there are no pending timers.
  */
     long
-check_due_timer()
+check_due_timer(void)
 {
     timer_T	*timer;
+    timer_T	*timer_next;
     long	this_due;
     long	next_due = -1;
     proftime_T	now;
     int		did_one = FALSE;
-# ifdef WIN3264
-    LARGE_INTEGER   fr;
+    int		need_update_screen = FALSE;
+    long	current_id = last_timer_id;
 
-    QueryPerformanceFrequency(&fr);
-# endif
-    while (!got_int)
+    /* Don't run any timers while exiting or dealing with an error. */
+    if (exiting || aborting())
+	return next_due;
+
+    profile_start(&now);
+    for (timer = first_timer; timer != NULL && !got_int; timer = timer_next)
     {
-	profile_start(&now);
-	next_due = -1;
-	for (timer = first_timer; timer != NULL; timer = timer->tr_next)
+	timer_next = timer->tr_next;
+
+	if (timer->tr_id == -1 || timer->tr_firing || timer->tr_paused)
+	    continue;
+	this_due = proftime_time_left(&timer->tr_due, &now);
+	if (this_due <= 1)
 	{
-# ifdef WIN3264
-	    this_due = (long)(((double)(timer->tr_due.QuadPart - now.QuadPart)
-					       / (double)fr.QuadPart) * 1000);
-# else
-	    this_due = (timer->tr_due.tv_sec - now.tv_sec) * 1000
-			       + (timer->tr_due.tv_usec - now.tv_usec) / 1000;
-# endif
-	    if (this_due <= 1)
+	    int save_timer_busy = timer_busy;
+	    int save_vgetc_busy = vgetc_busy;
+	    int save_did_emsg = did_emsg;
+	    int save_called_emsg = called_emsg;
+	    int	save_must_redraw = must_redraw;
+	    int	save_trylevel = trylevel;
+	    int save_did_throw = did_throw;
+	    int save_ex_pressedreturn = get_pressedreturn();
+	    except_T *save_current_exception = current_exception;
+
+	    /* Create a scope for running the timer callback, ignoring most of
+	     * the current scope, such as being inside a try/catch. */
+	    timer_busy = timer_busy > 0 || vgetc_busy > 0;
+	    vgetc_busy = 0;
+	    called_emsg = FALSE;
+	    did_emsg = FALSE;
+	    did_uncaught_emsg = FALSE;
+	    must_redraw = 0;
+	    trylevel = 0;
+	    did_throw = FALSE;
+	    current_exception = NULL;
+
+	    timer->tr_firing = TRUE;
+	    timer_callback(timer);
+	    timer->tr_firing = FALSE;
+
+	    timer_next = timer->tr_next;
+	    did_one = TRUE;
+	    timer_busy = save_timer_busy;
+	    vgetc_busy = save_vgetc_busy;
+	    if (did_uncaught_emsg)
+		++timer->tr_emsg_count;
+	    did_emsg = save_did_emsg;
+	    called_emsg = save_called_emsg;
+	    trylevel = save_trylevel;
+	    did_throw = save_did_throw;
+	    current_exception = save_current_exception;
+	    if (must_redraw != 0)
+		need_update_screen = TRUE;
+	    must_redraw = must_redraw > save_must_redraw
+					      ? must_redraw : save_must_redraw;
+	    set_pressedreturn(save_ex_pressedreturn);
+
+	    /* Only fire the timer again if it repeats and stop_timer() wasn't
+	     * called while inside the callback (tr_id == -1). */
+	    if (timer->tr_repeat != 0 && timer->tr_id != -1
+		    && timer->tr_emsg_count < 3)
 	    {
-		remove_timer(timer);
-		timer_callback(timer);
-		did_one = TRUE;
-		if (timer->tr_repeat != 0)
-		{
-		    profile_setlimit(timer->tr_interval, &timer->tr_due);
-		    if (timer->tr_repeat > 0)
-			--timer->tr_repeat;
-		    insert_timer(timer);
-		}
-		else
-		    free_timer(timer);
-		/* the callback may do anything, start all over */
-		break;
+		profile_setlimit(timer->tr_interval, &timer->tr_due);
+		this_due = proftime_time_left(&timer->tr_due, &now);
+		if (this_due < 1)
+		    this_due = 1;
+		if (timer->tr_repeat > 0)
+		    --timer->tr_repeat;
 	    }
-	    if (next_due == -1 || next_due > this_due)
-		next_due = this_due;
+	    else
+	    {
+		this_due = -1;
+		remove_timer(timer);
+		free_timer(timer);
+	    }
 	}
-	if (timer == NULL)
-	    break;
+	if (this_due > 0 && (next_due == -1 || next_due > this_due))
+	    next_due = this_due;
     }
 
     if (did_one)
-	redraw_after_callback();
+	redraw_after_callback(need_update_screen);
 
-    return next_due;
+#ifdef FEAT_BEVAL_TERM
+    if (bevalexpr_due_set)
+    {
+	this_due = proftime_time_left(&bevalexpr_due, &now);
+	if (this_due <= 1)
+	{
+	    bevalexpr_due_set = FALSE;
+
+	    if (balloonEval == NULL)
+	    {
+		balloonEval = (BalloonEval *)alloc(sizeof(BalloonEval));
+		balloonEvalForTerm = TRUE;
+	    }
+	    if (balloonEval != NULL)
+		general_beval_cb(balloonEval, 0);
+	}
+	else if (this_due > 0 && (next_due == -1 || next_due > this_due))
+	    next_due = this_due;
+    }
+#endif
+
+    return current_id != last_timer_id ? 1 : next_due;
 }
 
 /*
  * Find a timer by ID.  Returns NULL if not found;
  */
     timer_T *
-find_timer(int id)
+find_timer(long id)
 {
     timer_T *timer;
 
-    for (timer = first_timer; timer != NULL; timer = timer->tr_next)
-	if (timer->tr_id == id)
-	    break;
-    return timer;
+    if (id >= 0)
+    {
+	for (timer = first_timer; timer != NULL; timer = timer->tr_next)
+	    if (timer->tr_id == id)
+		return timer;
+    }
+    return NULL;
 }
 
 
@@ -1251,9 +1339,124 @@ find_timer(int id)
     void
 stop_timer(timer_T *timer)
 {
-    remove_timer(timer);
-    free_timer(timer);
+    if (timer->tr_firing)
+	/* Free the timer after the callback returns. */
+	timer->tr_id = -1;
+    else
+    {
+	remove_timer(timer);
+	free_timer(timer);
+    }
 }
+
+    void
+stop_all_timers(void)
+{
+    timer_T *timer;
+    timer_T *timer_next;
+
+    for (timer = first_timer; timer != NULL; timer = timer_next)
+    {
+	timer_next = timer->tr_next;
+	stop_timer(timer);
+    }
+}
+
+    void
+add_timer_info(typval_T *rettv, timer_T *timer)
+{
+    list_T	*list = rettv->vval.v_list;
+    dict_T	*dict = dict_alloc();
+    dictitem_T	*di;
+    long	remaining;
+    proftime_T	now;
+
+    if (dict == NULL)
+	return;
+    list_append_dict(list, dict);
+
+    dict_add_nr_str(dict, "id", timer->tr_id, NULL);
+    dict_add_nr_str(dict, "time", (long)timer->tr_interval, NULL);
+
+    profile_start(&now);
+    remaining = proftime_time_left(&timer->tr_due, &now);
+    dict_add_nr_str(dict, "remaining", (long)remaining, NULL);
+
+    dict_add_nr_str(dict, "repeat",
+	       (long)(timer->tr_repeat < 0 ? -1 : timer->tr_repeat + 1), NULL);
+    dict_add_nr_str(dict, "paused", (long)(timer->tr_paused), NULL);
+
+    di = dictitem_alloc((char_u *)"callback");
+    if (di != NULL)
+    {
+	if (dict_add(dict, di) == FAIL)
+	    vim_free(di);
+	else if (timer->tr_partial != NULL)
+	{
+	    di->di_tv.v_type = VAR_PARTIAL;
+	    di->di_tv.vval.v_partial = timer->tr_partial;
+	    ++timer->tr_partial->pt_refcount;
+	}
+	else
+	{
+	    di->di_tv.v_type = VAR_FUNC;
+	    di->di_tv.vval.v_string = vim_strsave(timer->tr_callback);
+	}
+	di->di_tv.v_lock = 0;
+    }
+}
+
+    void
+add_timer_info_all(typval_T *rettv)
+{
+    timer_T *timer;
+
+    for (timer = first_timer; timer != NULL; timer = timer->tr_next)
+	if (timer->tr_id != -1)
+	    add_timer_info(rettv, timer);
+}
+
+/*
+ * Mark references in partials of timers.
+ */
+    int
+set_ref_in_timer(int copyID)
+{
+    int		abort = FALSE;
+    timer_T	*timer;
+    typval_T	tv;
+
+    for (timer = first_timer; timer != NULL; timer = timer->tr_next)
+    {
+	if (timer->tr_partial != NULL)
+	{
+	    tv.v_type = VAR_PARTIAL;
+	    tv.vval.v_partial = timer->tr_partial;
+	}
+	else
+	{
+	    tv.v_type = VAR_FUNC;
+	    tv.vval.v_string = timer->tr_callback;
+	}
+	abort = abort || set_ref_in_item(&tv, copyID, NULL, NULL);
+    }
+    return abort;
+}
+
+#  if defined(EXITFREE) || defined(PROTO)
+    void
+timer_free_all()
+{
+    timer_T *timer;
+
+    while (first_timer != NULL)
+    {
+	timer = first_timer;
+	remove_timer(timer);
+	free_timer(timer);
+    }
+}
+#  endif
 # endif
 
 #if defined(FEAT_SYN_HL) && defined(FEAT_RELTIME) && defined(FEAT_FLOAT)
@@ -1534,7 +1737,7 @@ script_do_profile(scriptitem_T *si)
 }
 
 /*
- * save time when starting to invoke another script or function.
+ * Save time when starting to invoke another script or function.
  */
     void
 script_prof_save(
@@ -1625,12 +1828,34 @@ script_dump_profile(FILE *fd)
 		fprintf(fd, "Cannot open file!\n");
 	    else
 	    {
-		for (i = 0; i < si->sn_prl_ga.ga_len; ++i)
+		/* Keep going till the end of file, so that trailing
+		 * continuation lines are listed. */
+		for (i = 0; ; ++i)
 		{
 		    if (vim_fgets(IObuff, IOSIZE, sfd))
 			break;
-		    pp = &PRL_ITEM(si, i);
-		    if (pp->snp_count > 0)
+		    /* When a line has been truncated, append NL, taking care
+		     * of multi-byte characters . */
+		    if (IObuff[IOSIZE - 2] != NUL && IObuff[IOSIZE - 2] != NL)
+		    {
+			int n = IOSIZE - 2;
+# ifdef FEAT_MBYTE
+			if (enc_utf8)
+			{
+			    /* Move to the first byte of this char.
+			     * utf_head_off() doesn't work, because it checks
+			     * for a truncated character. */
+			    while (n > 0 && (IObuff[n] & 0xc0) == 0x80)
+				--n;
+			}
+			else if (has_mbyte)
+			    n -= mb_head_off(IObuff, IObuff + n);
+# endif
+			IObuff[n] = NL;
+			IObuff[n + 1] = NUL;
+		    }
+		    if (i < si->sn_prl_ga.ga_len
+				     && (pp = &PRL_ITEM(si, i))->snp_count > 0)
 		    {
 			fprintf(fd, "%5d ", pp->snp_count);
 			if (profile_equal(&pp->sn_prl_total, &pp->sn_prl_self))
@@ -1675,6 +1900,7 @@ prof_def_func(void)
 autowrite(buf_T *buf, int forceit)
 {
     int		r;
+    bufref_T	bufref;
 
     if (!(p_aw || p_awa) || !p_write
 #ifdef FEAT_QUICKFIX
@@ -1683,11 +1909,12 @@ autowrite(buf_T *buf, int forceit)
 #endif
 	    || (!forceit && buf->b_p_ro) || buf->b_ffname == NULL)
 	return FAIL;
+    set_bufref(&bufref, buf);
     r = buf_write_all(buf, forceit);
 
     /* Writing may succeed but the buffer still changed, e.g., when there is a
      * conversion error.  We do want to return FAIL then. */
-    if (buf_valid(buf) && bufIsChanged(buf))
+    if (bufref_valid(&bufref) && bufIsChanged(buf))
 	r = FAIL;
     return r;
 }
@@ -1702,13 +1929,18 @@ autowrite_all(void)
 
     if (!(p_aw || p_awa) || !p_write)
 	return;
-    for (buf = firstbuf; buf; buf = buf->b_next)
+    FOR_ALL_BUFFERS(buf)
 	if (bufIsChanged(buf) && !buf->b_p_ro)
 	{
+#ifdef FEAT_AUTOCMD
+	    bufref_T	bufref;
+
+	    set_bufref(&bufref, buf);
+#endif
 	    (void)buf_write_all(buf, FALSE);
 #ifdef FEAT_AUTOCMD
 	    /* an autocommand may have deleted the buffer */
-	    if (!buf_valid(buf))
+	    if (!bufref_valid(&bufref))
 		buf = firstbuf;
 #endif
 	}
@@ -1721,7 +1953,12 @@ autowrite_all(void)
     int
 check_changed(buf_T *buf, int flags)
 {
-    int forceit = (flags & CCGD_FORCEIT);
+    int		forceit = (flags & CCGD_FORCEIT);
+#ifdef FEAT_AUTOCMD
+    bufref_T	bufref;
+
+    set_bufref(&bufref, buf);
+#endif
 
     if (       !forceit
 	    && bufIsChanged(buf)
@@ -1735,7 +1972,7 @@ check_changed(buf_T *buf, int flags)
 	    int		count = 0;
 
 	    if (flags & CCGD_ALLBUF)
-		for (buf2 = firstbuf; buf2 != NULL; buf2 = buf2->b_next)
+		FOR_ALL_BUFFERS(buf2)
 		    if (bufIsChanged(buf2)
 				     && (buf2->b_ffname != NULL
 # ifdef FEAT_BROWSE
@@ -1744,13 +1981,13 @@ check_changed(buf_T *buf, int flags)
 					))
 			++count;
 # ifdef FEAT_AUTOCMD
-	    if (!buf_valid(buf))
+	    if (!bufref_valid(&bufref))
 		/* Autocommand deleted buffer, oops!  It's not changed now. */
 		return FALSE;
 # endif
 	    dialog_changed(buf, count > 1);
 # ifdef FEAT_AUTOCMD
-	    if (!buf_valid(buf))
+	    if (!bufref_valid(&bufref))
 		/* Autocommand deleted buffer, oops!  It's not changed now. */
 		return FALSE;
 # endif
@@ -1758,9 +1995,9 @@ check_changed(buf_T *buf, int flags)
 	}
 #endif
 	if (flags & CCGD_EXCMD)
-	    EMSG(_(e_nowrtmsg));
+	    no_write_message();
 	else
-	    EMSG(_(e_nowrtmsg_nobang));
+	    no_write_message_nobang();
 	return TRUE;
     }
     return FALSE;
@@ -1805,9 +2042,7 @@ dialog_changed(
     buf_T	*buf2;
     exarg_T     ea;
 
-    dialog_msg(buff, _("Save changes to \"%s\"?"),
-			(buf->b_fname != NULL) ?
-			buf->b_fname : (char_u *)_("Untitled"));
+    dialog_msg(buff, _("Save changes to \"%s\"?"), buf->b_fname);
     if (checkall)
 	ret = vim_dialog_yesnoallcancel(VIM_QUESTION, NULL, buff, 1);
     else
@@ -1839,7 +2074,7 @@ dialog_changed(
 	 * Skip readonly buffers, these need to be confirmed
 	 * individually.
 	 */
-	for (buf2 = firstbuf; buf2 != NULL; buf2 = buf2->b_next)
+	FOR_ALL_BUFFERS(buf2)
 	{
 	    if (bufIsChanged(buf2)
 		    && (buf2->b_ffname != NULL
@@ -1849,6 +2084,11 @@ dialog_changed(
 			)
 		    && !buf2->b_p_ro)
 	    {
+#ifdef FEAT_AUTOCMD
+		bufref_T bufref;
+
+		set_bufref(&bufref, buf2);
+#endif
 #ifdef FEAT_BROWSE
 		/* May get file name, when there is none */
 		browse_save_fname(buf2);
@@ -1859,7 +2099,7 @@ dialog_changed(
 		    (void)buf_write_all(buf2, FALSE);
 #ifdef FEAT_AUTOCMD
 		/* an autocommand may have deleted the buffer */
-		if (!buf_valid(buf2))
+		if (!bufref_valid(&bufref))
 		    buf2 = firstbuf;
 #endif
 	    }
@@ -1870,7 +2110,7 @@ dialog_changed(
 	/*
 	 * mark all buffers as unchanged
 	 */
-	for (buf2 = firstbuf; buf2 != NULL; buf2 = buf2->b_next)
+	FOR_ALL_BUFFERS(buf2)
 	    unchanged(buf2, TRUE);
     }
 }
@@ -1883,7 +2123,7 @@ dialog_changed(
     int
 can_abandon(buf_T *buf, int forceit)
 {
-    return (	   P_HID(buf)
+    return (	   buf_hide(buf)
 		|| !bufIsChanged(buf)
 		|| buf->b_nwindows > 1
 		|| autowrite(buf, forceit) == OK
@@ -1925,12 +2165,10 @@ check_changed_any(
     int		bufnum = 0;
     int		bufcount = 0;
     int		*bufnrs;
-#ifdef FEAT_WINDOWS
     tabpage_T   *tp;
     win_T	*wp;
-#endif
 
-    for (buf = firstbuf; buf != NULL; buf = buf->b_next)
+    FOR_ALL_BUFFERS(buf)
 	++bufcount;
 
     if (bufcount == 0)
@@ -1942,20 +2180,18 @@ check_changed_any(
 
     /* curbuf */
     bufnrs[bufnum++] = curbuf->b_fnum;
-#ifdef FEAT_WINDOWS
     /* buf in curtab */
     FOR_ALL_WINDOWS(wp)
 	if (wp->w_buffer != curbuf)
 	    add_bufnum(bufnrs, &bufnum, wp->w_buffer->b_fnum);
 
     /* buf in other tab */
-    for (tp = first_tabpage; tp != NULL; tp = tp->tp_next)
+    FOR_ALL_TABPAGES(tp)
 	if (tp != curtab)
 	    for (wp = tp->tp_firstwin; wp != NULL; wp = wp->w_next)
 		add_bufnum(bufnrs, &bufnum, wp->w_buffer->b_fnum);
-#endif
     /* any other buf */
-    for (buf = firstbuf; buf != NULL; buf = buf->b_next)
+    FOR_ALL_BUFFERS(buf)
 	add_bufnum(bufnrs, &bufnum, buf->b_fnum);
 
     for (i = 0; i < bufnum; ++i)
@@ -1965,11 +2201,14 @@ check_changed_any(
 	    continue;
 	if ((!hidden || buf->b_nwindows == 0) && bufIsChanged(buf))
 	{
+	    bufref_T bufref;
+
+	    set_bufref(&bufref, buf);
 	    /* Try auto-writing the buffer.  If this fails but the buffer no
 	    * longer exists it's not changed, that's OK. */
 	    if (check_changed(buf, (p_awa ? CCGD_AW : 0)
 				 | CCGD_MULTWIN
-				 | CCGD_ALLBUF) && buf_valid(buf))
+				 | CCGD_ALLBUF) && bufref_valid(&bufref))
 		break;	    /* didn't save - still changes */
 	}
     }
@@ -1996,7 +2235,14 @@ check_changed_any(
 	    msg_col = 0;
 	    msg_didout = FALSE;
 	}
-	if (EMSG2(_("E162: No write since last change for buffer \"%s\""),
+	if (
+#ifdef FEAT_TERMINAL
+		term_job_running(buf->b_term)
+		    ? EMSG2(_("E947: Job still running in buffer \"%s\""),
+								  buf->b_fname)
+		    :
+#endif
+		EMSG2(_("E162: No write since last change for buffer \"%s\""),
 		    buf_spname(buf) != NULL ? buf_spname(buf) : buf->b_fname))
 	{
 	    save = no_wait_return;
@@ -2006,24 +2252,27 @@ check_changed_any(
 	}
     }
 
-#ifdef FEAT_WINDOWS
     /* Try to find a window that contains the buffer. */
     if (buf != curbuf)
 	FOR_ALL_TAB_WINDOWS(tp, wp)
 	    if (wp->w_buffer == buf)
 	    {
+#ifdef FEAT_AUTOCMD
+		bufref_T bufref;
+
+		set_bufref(&bufref, buf);
+#endif
 		goto_tabpage_win(tp, wp);
-# ifdef FEAT_AUTOCMD
+#ifdef FEAT_AUTOCMD
 		/* Paranoia: did autocms wipe out the buffer with changes? */
-		if (!buf_valid(buf))
+		if (!bufref_valid(&bufref))
 		{
 		    goto theend;
 		}
-# endif
+#endif
 		goto buf_found;
 	    }
 buf_found:
-#endif
 
     /* Open the changed buffer in the current window. */
     if (buf != curbuf)
@@ -2068,7 +2317,7 @@ buf_write_all(buf_T *buf, int forceit)
 #ifdef FEAT_AUTOCMD
     if (curbuf != old_curbuf)
     {
-	msg_source(hl_attr(HLF_W));
+	msg_source(HL_ATTR(HLF_W));
 	MSG(_("Warning: Entered other buffer unexpectedly (check autocommands)"));
     }
 #endif
@@ -2131,8 +2380,8 @@ do_one_arg(char_u *str)
  * Separate the arguments in "str" and return a list of pointers in the
  * growarray "gap".
  */
-    int
-get_arglist(garray_T *gap, char_u *str)
+    static int
+get_arglist(garray_T *gap, char_u *str, int escaped)
 {
     ga_init2(gap, (int)sizeof(char_u *), 20);
     while (*str != NUL)
@@ -2143,6 +2392,10 @@ get_arglist(garray_T *gap, char_u *str)
 	    return FAIL;
 	}
 	((char_u **)gap->ga_data)[gap->ga_len++] = str;
+
+	/* If str is escaped, don't handle backslashes or spaces */
+	if (!escaped)
+	    return OK;
 
 	/* Isolate one argument, change it in-place, put a NUL after it. */
 	str = do_one_arg(str);
@@ -2166,7 +2419,7 @@ get_arglist_exp(
     garray_T	ga;
     int		i;
 
-    if (get_arglist(&ga, str) == FAIL)
+    if (get_arglist(&ga, str, TRUE) == FAIL)
 	return FAIL;
     if (wig == TRUE)
 	i = expand_wildcards(ga.ga_len, (char_u **)ga.ga_data,
@@ -2212,6 +2465,7 @@ do_arglist(
     char_u	*p;
     int		match;
 #endif
+    int		arg_escaped = TRUE;
 
     /*
      * Set default argument for ":argadd" command.
@@ -2221,12 +2475,13 @@ do_arglist(
 	if (curbuf->b_ffname == NULL)
 	    return FAIL;
 	str = curbuf->b_fname;
+	arg_escaped = FALSE;
     }
 
     /*
      * Collect all file name arguments in "new_ga".
      */
-    if (get_arglist(&new_ga, str) == FAIL)
+    if (get_arglist(&new_ga, str, arg_escaped) == FAIL)
 	return FAIL;
 
 #ifdef FEAT_LISTCMDS
@@ -2309,16 +2564,12 @@ do_arglist(
     static void
 alist_check_arg_idx(void)
 {
-#ifdef FEAT_WINDOWS
     win_T	*win;
     tabpage_T	*tp;
 
     FOR_ALL_TAB_WINDOWS(tp, win)
 	if (win->w_alist == curwin->w_alist)
 	    check_arg_idx(win);
-#else
-    check_arg_idx(curwin);
-#endif
 }
 
 /*
@@ -2350,9 +2601,7 @@ check_arg_idx(win_T *win)
 	win->w_arg_idx_invalid = TRUE;
 	if (win->w_arg_idx != WARGCOUNT(win) - 1
 		&& arg_had_last == FALSE
-#ifdef FEAT_WINDOWS
 		&& ALIST(win) == &global_alist
-#endif
 		&& GARGCOUNT > 0
 		&& win->w_arg_idx < GARGCOUNT
 		&& (win->w_buffer->b_fnum == GARGLIST[GARGCOUNT - 1].ae_fnum
@@ -2367,10 +2616,7 @@ check_arg_idx(win_T *win)
 	 * Set "arg_had_last" if it's also the last one */
 	win->w_arg_idx_invalid = FALSE;
 	if (win->w_arg_idx == WARGCOUNT(win) - 1
-#ifdef FEAT_WINDOWS
-		&& win->w_alist == &global_alist
-#endif
-		)
+					      && win->w_alist == &global_alist)
 	    arg_had_last = TRUE;
     }
 }
@@ -2385,7 +2631,7 @@ ex_args(exarg_T *eap)
 
     if (eap->cmdidx != CMD_args)
     {
-#if defined(FEAT_WINDOWS) && defined(FEAT_LISTCMDS)
+#if defined(FEAT_LISTCMDS)
 	alist_unlink(ALIST(curwin));
 	if (eap->cmdidx == CMD_argglobal)
 	    ALIST(curwin) = &global_alist;
@@ -2406,7 +2652,7 @@ ex_args(exarg_T *eap)
 	ex_next(eap);
     }
     else
-#if defined(FEAT_WINDOWS) && defined(FEAT_LISTCMDS)
+#if defined(FEAT_LISTCMDS)
 	if (eap->cmdidx == CMD_args)
 #endif
     {
@@ -2429,7 +2675,7 @@ ex_args(exarg_T *eap)
 	    }
 	}
     }
-#if defined(FEAT_WINDOWS) && defined(FEAT_LISTCMDS)
+#if defined(FEAT_LISTCMDS)
     else if (eap->cmdidx == CMD_arglocal)
     {
 	garray_T	*gap = &curwin->w_alist->al_ga;
@@ -2523,7 +2769,6 @@ do_argfile(exarg_T *eap, int argn)
 	need_mouse_correct = TRUE;
 #endif
 
-#ifdef FEAT_WINDOWS
 	/* split window or create new tab page first */
 	if (*eap->cmd == 's' || cmdmod.tab != 0)
 	{
@@ -2532,20 +2777,19 @@ do_argfile(exarg_T *eap, int argn)
 	    RESET_BINDING(curwin);
 	}
 	else
-#endif
 	{
 	    /*
 	     * if 'hidden' set, only check for changed file when re-editing
 	     * the same buffer
 	     */
 	    other = TRUE;
-	    if (P_HID(curbuf))
+	    if (buf_hide(curbuf))
 	    {
 		p = fix_fname(alist_name(&ARGLIST[argn]));
 		other = otherfile(p);
 		vim_free(p);
 	    }
-	    if ((!P_HID(curbuf) || !other)
+	    if ((!buf_hide(curbuf) || !other)
 		  && check_changed(curbuf, CCGD_AW
 					 | (other ? 0 : CCGD_MULTWIN)
 					 | (eap->forceit ? CCGD_FORCEIT : 0)
@@ -2554,11 +2798,7 @@ do_argfile(exarg_T *eap, int argn)
 	}
 
 	curwin->w_arg_idx = argn;
-	if (argn == ARGCOUNT - 1
-#ifdef FEAT_WINDOWS
-		&& curwin->w_alist == &global_alist
-#endif
-	   )
+	if (argn == ARGCOUNT - 1 && curwin->w_alist == &global_alist)
 	    arg_had_last = TRUE;
 
 	/* Edit the file; always use the last known line number.
@@ -2566,7 +2806,7 @@ do_argfile(exarg_T *eap, int argn)
 	 * argument index. */
 	if (do_ecmd(0, alist_name(&ARGLIST[curwin->w_arg_idx]), NULL,
 		      eap, ECMD_LAST,
-		      (P_HID(curwin->w_buffer) ? ECMD_HIDE : 0)
+		      (buf_hide(curwin->w_buffer) ? ECMD_HIDE : 0)
 			 + (eap->forceit ? ECMD_FORCEIT : 0), curwin) == FAIL)
 	    curwin->w_arg_idx = old_arg_idx;
 	/* like Vi: set the mark where the cursor is in the file. */
@@ -2587,7 +2827,7 @@ ex_next(exarg_T *eap)
      * check for changed buffer now, if this fails the argument list is not
      * redefined.
      */
-    if (       P_HID(curbuf)
+    if (       buf_hide(curbuf)
 	    || eap->cmdidx == CMD_snext
 	    || !check_changed(curbuf, CCGD_AW
 				    | (eap->forceit ? CCGD_FORCEIT : 0)
@@ -2612,34 +2852,20 @@ ex_next(exarg_T *eap)
     void
 ex_argedit(exarg_T *eap)
 {
-    int		fnum;
-    int		i;
-    char_u	*s;
+    int i = eap->addr_count ? (int)eap->line2 : curwin->w_arg_idx + 1;
 
-    /* Add the argument to the buffer list and get the buffer number. */
-    fnum = buflist_add(eap->arg, BLN_LISTED);
+    if (do_arglist(eap->arg, AL_ADD, i) == FAIL)
+	return;
+#ifdef FEAT_TITLE
+    maketitle();
+#endif
 
-    /* Check if this argument is already in the argument list. */
-    for (i = 0; i < ARGCOUNT; ++i)
-	if (ARGLIST[i].ae_fnum == fnum)
-	    break;
-    if (i == ARGCOUNT)
-    {
-	/* Can't find it, add it to the argument list. */
-	s = vim_strsave(eap->arg);
-	if (s == NULL)
-	    return;
-	i = alist_add_list(1, &s,
-	       eap->addr_count > 0 ? (int)eap->line2 : curwin->w_arg_idx + 1);
-	if (i < 0)
-	    return;
-	curwin->w_arg_idx = i;
-    }
-
-    alist_check_arg_idx();
-
+    if (curwin->w_arg_idx == 0 && (curbuf->b_ml.ml_flags & ML_EMPTY)
+	    && curbuf->b_ffname == NULL)
+	i = 0;
     /* Edit the argument. */
-    do_argfile(eap, i);
+    if (i < ARGCOUNT)
+	do_argfile(eap, i);
 }
 
 /*
@@ -2670,8 +2896,15 @@ ex_argdelete(exarg_T *eap)
 	if (eap->line2 > ARGCOUNT)
 	    eap->line2 = ARGCOUNT;
 	n = eap->line2 - eap->line1 + 1;
-	if (*eap->arg != NUL || n <= 0)
+	if (*eap->arg != NUL)
+	    /* Can't have both a range and an argument. */
 	    EMSG(_(e_invarg));
+	else if (n <= 0)
+	{
+	    /* Don't give an error for ":%argdel" if the list is empty. */
+	    if (eap->line1 != 1 || eap->line2 != 0)
+		EMSG(_(e_invrange));
+	}
 	else
 	{
 	    for (i = eap->line1; i <= eap->line2; ++i)
@@ -2705,10 +2938,8 @@ ex_argdelete(exarg_T *eap)
 ex_listdo(exarg_T *eap)
 {
     int		i;
-#ifdef FEAT_WINDOWS
     win_T	*wp;
     tabpage_T	*tp;
-#endif
     buf_T	*buf = curbuf;
     int		next_fnum = 0;
 #if defined(FEAT_AUTOCMD) && defined(FEAT_SYN_HL)
@@ -2718,14 +2949,6 @@ ex_listdo(exarg_T *eap)
 #ifdef FEAT_QUICKFIX
     int		qf_size = 0;
     int		qf_idx;
-#endif
-
-#ifndef FEAT_WINDOWS
-    if (eap->cmdidx == CMD_windo)
-    {
-	ex_ni(eap);
-	return;
-    }
 #endif
 
 #ifndef FEAT_QUICKFIX
@@ -2749,20 +2972,17 @@ ex_listdo(exarg_T *eap)
 
     if (eap->cmdidx == CMD_windo
 	    || eap->cmdidx == CMD_tabdo
-	    || P_HID(curbuf)
+	    || buf_hide(curbuf)
 	    || !check_changed(curbuf, CCGD_AW
 				    | (eap->forceit ? CCGD_FORCEIT : 0)
 				    | CCGD_EXCMD))
     {
 	i = 0;
 	/* start at the eap->line1 argument/window/buffer */
-#ifdef FEAT_WINDOWS
 	wp = firstwin;
 	tp = first_tabpage;
-#endif
 	switch (eap->cmdidx)
 	{
-#ifdef FEAT_WINDOWS
 	    case CMD_windo:
 		for ( ; wp != NULL && i + 1 < eap->line1; wp = wp->w_next)
 		    i++;
@@ -2771,7 +2991,6 @@ ex_listdo(exarg_T *eap)
 		for( ; tp != NULL && i + 1 < eap->line1; tp = tp->tp_next)
 		    i++;
 		break;
-#endif
 	    case CMD_argdo:
 		i = eap->line1 - 1;
 		break;
@@ -2837,7 +3056,6 @@ ex_listdo(exarg_T *eap)
 		if (curwin->w_arg_idx != i)
 		    break;
 	    }
-#ifdef FEAT_WINDOWS
 	    else if (eap->cmdidx == CMD_windo)
 	    {
 		/* go to window "wp" */
@@ -2856,7 +3074,6 @@ ex_listdo(exarg_T *eap)
 		goto_tabpage_tp(tp, TRUE, TRUE);
 		tp = tp->tp_next;
 	    }
-#endif
 	    else if (eap->cmdidx == CMD_bufdo)
 	    {
 		/* Remember the number of the next listed buffer, in case
@@ -2882,7 +3099,7 @@ ex_listdo(exarg_T *eap)
 		if (next_fnum < 0 || next_fnum > eap->line2)
 		    break;
 		/* Check if the buffer still exists. */
-		for (buf = firstbuf; buf != NULL; buf = buf->b_next)
+		FOR_ALL_BUFFERS(buf)
 		    if (buf->b_fnum == next_fnum)
 			break;
 		if (buf == NULL)
@@ -2928,11 +3145,9 @@ ex_listdo(exarg_T *eap)
 #endif
 	    }
 
-#ifdef FEAT_WINDOWS
 	    if (eap->cmdidx == CMD_windo || eap->cmdidx == CMD_tabdo)
 		if (i+1 > eap->line2)
 		    break;
-#endif
 	    if (eap->cmdidx == CMD_argdo && i >= eap->line2)
 		break;
 	}
@@ -3110,19 +3325,6 @@ source_callback(char_u *fname, void *cookie UNUSED)
 }
 
 /*
- * Source the file "name" from all directories in 'runtimepath'.
- * "name" can contain wildcards.
- * When "flags" has DIP_ALL: source all files, otherwise only the first one.
- *
- * return FAIL when no file could be sourced, OK otherwise.
- */
-    int
-source_runtime(char_u *name, int flags)
-{
-    return do_in_runtimepath(name, flags, source_callback, NULL);
-}
-
-/*
  * Find the file "name" in all directories in "path" and invoke
  * "callback(fname, cookie)".
  * "name" can contain wildcards.
@@ -3175,15 +3377,30 @@ do_in_path(
 	rtp = rtp_copy;
 	while (*rtp != NUL && ((flags & DIP_ALL) || !did_one))
 	{
+	    size_t buflen;
+
 	    /* Copy the path from 'runtimepath' to buf[]. */
 	    copy_option_part(&rtp, buf, MAXPATHL, ",");
+	    buflen = STRLEN(buf);
+
+	    /* Skip after or non-after directories. */
+	    if (flags & (DIP_NOAFTER | DIP_AFTER))
+	    {
+		int is_after = buflen >= 5
+				     && STRCMP(buf + buflen - 5, "after") == 0;
+
+		if ((is_after && (flags & DIP_NOAFTER))
+			|| (!is_after && (flags & DIP_AFTER)))
+		    continue;
+	    }
+
 	    if (name == NULL)
 	    {
 		(*callback)(buf, (void *) &cookie);
 		if (!did_one)
 		    did_one = (cookie == NULL);
 	    }
-	    else if (STRLEN(buf) + STRLEN(name) + 2 < MAXPATHL)
+	    else if (buflen + STRLEN(name) + 2 < MAXPATHL)
 	    {
 		add_pathsep(buf);
 		tail = buf + STRLEN(buf);
@@ -3244,18 +3461,19 @@ do_in_path(
 }
 
 /*
- * Find "name" in 'runtimepath'.  When found, invoke the callback function for
+ * Find "name" in "path".  When found, invoke the callback function for
  * it: callback(fname, "cookie")
  * When "flags" has DIP_ALL repeat for all matches, otherwise only the first
  * one is used.
  * Returns OK when at least one match found, FAIL otherwise.
  *
- * If "name" is NULL calls callback for each entry in runtimepath. Cookie is
+ * If "name" is NULL calls callback for each entry in "path". Cookie is
  * passed by reference in this case, setting it to NULL indicates that callback
  * has done its job.
  */
-    int
-do_in_runtimepath(
+    static int
+do_in_path_and_pp(
+    char_u	*path,
     char_u	*name,
     int		flags,
     void	(*callback)(char_u *fname, void *ck),
@@ -3268,7 +3486,7 @@ do_in_runtimepath(
     char	*opt_dir = "pack/*/opt/*/%s";
 
     if ((flags & DIP_NORTP) == 0)
-	done = do_in_path(p_rtp, name, flags, callback, cookie);
+	done = do_in_path(path, name, flags, callback, cookie);
 
     if ((done == FAIL || (flags & DIP_ALL)) && (flags & DIP_START))
     {
@@ -3296,6 +3514,42 @@ do_in_runtimepath(
 }
 
 /*
+ * Just like do_in_path_and_pp(), using 'runtimepath' for "path".
+ */
+    int
+do_in_runtimepath(
+    char_u	*name,
+    int		flags,
+    void	(*callback)(char_u *fname, void *ck),
+    void	*cookie)
+{
+    return do_in_path_and_pp(p_rtp, name, flags, callback, cookie);
+}
+
+/*
+ * Source the file "name" from all directories in 'runtimepath'.
+ * "name" can contain wildcards.
+ * When "flags" has DIP_ALL: source all files, otherwise only the first one.
+ *
+ * return FAIL when no file could be sourced, OK otherwise.
+ */
+    int
+source_runtime(char_u *name, int flags)
+{
+    return source_in_path(p_rtp, name, flags);
+}
+
+/*
+ * Just like source_runtime(), but use "path" instead of 'runtimepath'.
+ */
+    int
+source_in_path(char_u *path, char_u *name, int flags)
+{
+    return do_in_path_and_pp(path, name, flags, source_callback, NULL);
+}
+
+
+/*
  * Expand wildcards in "pat" and invoke do_source() for each match.
  */
     static void
@@ -3313,6 +3567,11 @@ source_all_matches(char_u *pat)
     }
 }
 
+/* used for "cookie" of add_pack_plugin() */
+static int APP_ADD_DIR;
+static int APP_LOAD;
+static int APP_BOTH;
+
     static void
 add_pack_plugin(char_u *fname, void *cookie)
 {
@@ -3321,18 +3580,23 @@ add_pack_plugin(char_u *fname, void *cookie)
     int	    c;
     char_u  *new_rtp;
     int	    keep;
-    int	    oldlen;
-    int	    addlen;
+    size_t  oldlen;
+    size_t  addlen;
+    char_u  *afterdir;
+    size_t  afterlen = 0;
     char_u  *ffname = fix_fname(fname);
-    int	    load_files = cookie != NULL;
+    size_t  fname_len;
+    char_u  *buf = NULL;
+    char_u  *rtp_ffname;
+    int	    match;
 
     if (ffname == NULL)
 	return;
-    if (strstr((char *)p_rtp, (char *)ffname) == NULL)
+    if (cookie != &APP_LOAD && strstr((char *)p_rtp, (char *)ffname) == NULL)
     {
-	/* directory not in 'runtimepath', add it */
+	/* directory is not yet in 'runtimepath', add it */
 	p4 = p3 = p2 = p1 = get_past_head(ffname);
-	for (p = p1; *p; mb_ptr_adv(p))
+	for (p = p1; *p; MB_PTR_ADV(p))
 	    if (vim_ispathsep_nocolon(*p))
 	    {
 		p4 = p3; p3 = p2; p2 = p1; p1 = p;
@@ -3345,38 +3609,65 @@ add_pack_plugin(char_u *fname, void *cookie)
 	 * find the part up to "pack" in 'runtimepath' */
 	c = *p4;
 	*p4 = NUL;
-	insp = (char_u *)strstr((char *)p_rtp, (char *)ffname);
-	if (insp == NULL)
+
+	/* Find "ffname" in "p_rtp", ignoring '/' vs '\' differences. */
+	fname_len = STRLEN(ffname);
+	insp = p_rtp;
+	buf = alloc(MAXPATHL);
+	if (buf == NULL)
+	    goto theend;
+	while (*insp != NUL)
+	{
+	    copy_option_part(&insp, buf, MAXPATHL, ",");
+	    add_pathsep(buf);
+	    rtp_ffname = fix_fname(buf);
+	    if (rtp_ffname == NULL)
+		goto theend;
+	    match = vim_fnamencmp(rtp_ffname, ffname, fname_len) == 0;
+	    vim_free(rtp_ffname);
+	    if (match)
+		break;
+	}
+
+	if (*insp == NUL)
 	    /* not found, append at the end */
 	    insp = p_rtp + STRLEN(p_rtp);
 	else
-	{
 	    /* append after the matching directory. */
-	    insp += STRLEN(ffname);
-	    while (*insp != NUL && *insp != ',')
-		++insp;
-	}
+	    --insp;
 	*p4 = c;
 
-	oldlen = (int)STRLEN(p_rtp);
-	addlen = (int)STRLEN(ffname);
-	new_rtp = alloc(oldlen + addlen + 2);
+	/* check if rtp/pack/name/start/name/after exists */
+	afterdir = concat_fnames(ffname, (char_u *)"after", TRUE);
+	if (afterdir != NULL && mch_isdir(afterdir))
+	    afterlen = STRLEN(afterdir) + 1; /* add one for comma */
+
+	oldlen = STRLEN(p_rtp);
+	addlen = STRLEN(ffname) + 1; /* add one for comma */
+	new_rtp = alloc((int)(oldlen + addlen + afterlen + 1));
+							  /* add one for NUL */
 	if (new_rtp == NULL)
 	    goto theend;
 	keep = (int)(insp - p_rtp);
 	mch_memmove(new_rtp, p_rtp, keep);
 	new_rtp[keep] = ',';
-	mch_memmove(new_rtp + keep + 1, ffname, addlen + 1);
+	mch_memmove(new_rtp + keep + 1, ffname, addlen);
 	if (p_rtp[keep] != NUL)
-	    mch_memmove(new_rtp + keep + 1 + addlen, p_rtp + keep,
+	    mch_memmove(new_rtp + keep + addlen, p_rtp + keep,
 							   oldlen - keep + 1);
+	if (afterlen > 0)
+	{
+	    STRCAT(new_rtp, ",");
+	    STRCAT(new_rtp, afterdir);
+	}
 	set_option_value((char_u *)"rtp", 0L, new_rtp, 0);
 	vim_free(new_rtp);
+	vim_free(afterdir);
     }
 
-    if (load_files)
+    if (cookie != &APP_ADD_DIR)
     {
-	static char *plugpat = "%s/plugin/*.vim";
+	static char *plugpat = "%s/plugin/**/*.vim";
 	static char *ftpat = "%s/ftdetect/*.vim";
 	int	    len;
 	char_u	    *pat;
@@ -3408,10 +3699,30 @@ add_pack_plugin(char_u *fname, void *cookie)
     }
 
 theend:
+    vim_free(buf);
     vim_free(ffname);
 }
 
-static int did_source_packages = FALSE;
+/*
+ * Add all packages in the "start" directory to 'runtimepath'.
+ */
+    void
+add_pack_start_dirs(void)
+{
+    do_in_path(p_pp, (char_u *)"pack/*/start/*", DIP_ALL + DIP_DIR,
+					       add_pack_plugin, &APP_ADD_DIR);
+}
+
+/*
+ * Load plugins from all packages in the "start" directory.
+ */
+    void
+load_start_packages(void)
+{
+    did_source_packages = TRUE;
+    do_in_path(p_pp, (char_u *)"pack/*/start/*", DIP_ALL + DIP_DIR,
+						  add_pack_plugin, &APP_LOAD);
+}
 
 /*
  * ":packloadall"
@@ -3420,11 +3731,13 @@ static int did_source_packages = FALSE;
     void
 ex_packloadall(exarg_T *eap)
 {
-    if (!did_source_packages || (eap != NULL && eap->forceit))
+    if (!did_source_packages || eap->forceit)
     {
-	did_source_packages = TRUE;
-	do_in_path(p_pp, (char_u *)"pack/*/start/*", DIP_ALL + DIP_DIR,
-							add_pack_plugin, p_pp);
+	/* First do a round to add all directories to 'runtimepath', then load
+	 * the plugins. This allows for plugins to use an autoload directory
+	 * of another plugin. */
+	add_pack_start_dirs();
+	load_start_packages();
     }
 }
 
@@ -3434,18 +3747,31 @@ ex_packloadall(exarg_T *eap)
     void
 ex_packadd(exarg_T *eap)
 {
-    static char *plugpat = "pack/*/opt/%s";
+    static char *plugpat = "pack/*/%s/%s";
     int		len;
     char	*pat;
+    int		round;
+    int		res = OK;
 
-    len = (int)STRLEN(plugpat) + (int)STRLEN(eap->arg);
-    pat = (char *)alloc(len);
-    if (pat == NULL)
-	return;
-    vim_snprintf(pat, len, plugpat, eap->arg);
-    do_in_path(p_pp, (char_u *)pat, DIP_ALL + DIP_DIR + DIP_ERR,
-				 add_pack_plugin, eap->forceit ? NULL : p_pp);
-    vim_free(pat);
+    /* Round 1: use "start", round 2: use "opt". */
+    for (round = 1; round <= 2; ++round)
+    {
+	/* Only look under "start" when loading packages wasn't done yet. */
+	if (round == 1 && did_source_packages)
+	    continue;
+
+	len = (int)STRLEN(plugpat) + (int)STRLEN(eap->arg) + 5;
+	pat = (char *)alloc(len);
+	if (pat == NULL)
+	    return;
+	vim_snprintf(pat, len, plugpat, round == 1 ? "start" : "opt", eap->arg);
+	/* The first round don't give a "not found" error, in the second round
+	 * only when nothing was found in the first round. */
+	res = do_in_path(p_pp, (char_u *)pat,
+		DIP_ALL + DIP_DIR + (round == 2 && res == FAIL ? DIP_ERR : 0),
+		add_pack_plugin, eap->forceit ? &APP_ADD_DIR : &APP_BOTH);
+	vim_free(pat);
+    }
 }
 
 #if defined(FEAT_EVAL) && defined(FEAT_AUTOCMD)
@@ -3456,8 +3782,197 @@ ex_packadd(exarg_T *eap)
 ex_options(
     exarg_T	*eap UNUSED)
 {
+    vim_setenv((char_u *)"OPTWIN_CMD", (char_u *)(cmdmod.tab ? "tab" : ""));
     cmd_source((char_u *)SYS_OPTWIN_FILE, NULL);
 }
+#endif
+
+#if defined(FEAT_PYTHON3) || defined(FEAT_PYTHON) || defined(PROTO)
+
+# if (defined(FEAT_PYTHON) && defined(FEAT_PYTHON3)) || defined(PROTO)
+/*
+ * Detect Python 3 or 2, and initialize 'pyxversion'.
+ */
+    void
+init_pyxversion(void)
+{
+    if (p_pyx == 0)
+    {
+	if (python3_enabled(FALSE))
+	    p_pyx = 3;
+	else if (python_enabled(FALSE))
+	    p_pyx = 2;
+    }
+}
+# endif
+
+/*
+ * Does a file contain one of the following strings at the beginning of any
+ * line?
+ * "#!(any string)python2"  => returns 2
+ * "#!(any string)python3"  => returns 3
+ * "# requires python 2.x"  => returns 2
+ * "# requires python 3.x"  => returns 3
+ * otherwise return 0.
+ */
+    static int
+requires_py_version(char_u *filename)
+{
+    FILE    *file;
+    int	    requires_py_version = 0;
+    int	    i, lines;
+
+    lines = (int)p_mls;
+    if (lines < 0)
+	lines = 5;
+
+    file = mch_fopen((char *)filename, "r");
+    if (file != NULL)
+    {
+	for (i = 0; i < lines; i++)
+	{
+	    if (vim_fgets(IObuff, IOSIZE, file))
+		break;
+	    if (i == 0 && IObuff[0] == '#' && IObuff[1] == '!')
+	    {
+		/* Check shebang. */
+		if (strstr((char *)IObuff + 2, "python2") != NULL)
+		{
+		    requires_py_version = 2;
+		    break;
+		}
+		if (strstr((char *)IObuff + 2, "python3") != NULL)
+		{
+		    requires_py_version = 3;
+		    break;
+		}
+	    }
+	    IObuff[21] = '\0';
+	    if (STRCMP("# requires python 2.x", IObuff) == 0)
+	    {
+		requires_py_version = 2;
+		break;
+	    }
+	    if (STRCMP("# requires python 3.x", IObuff) == 0)
+	    {
+		requires_py_version = 3;
+		break;
+	    }
+	}
+	fclose(file);
+    }
+    return requires_py_version;
+}
+
+
+/*
+ * Source a python file using the requested python version.
+ */
+    static void
+source_pyx_file(exarg_T *eap, char_u *fname)
+{
+    exarg_T ex;
+    int	    v = requires_py_version(fname);
+
+# if defined(FEAT_PYTHON) && defined(FEAT_PYTHON3)
+    init_pyxversion();
+# endif
+    if (v == 0)
+    {
+# if defined(FEAT_PYTHON) && defined(FEAT_PYTHON3)
+	/* user didn't choose a preference, 'pyx' is used */
+	v = p_pyx;
+# elif defined(FEAT_PYTHON)
+	v = 2;
+# elif defined(FEAT_PYTHON3)
+	v = 3;
+# endif
+    }
+
+    /*
+     * now source, if required python version is not supported show
+     * unobtrusive message.
+     */
+    if (eap == NULL)
+	vim_memset(&ex, 0, sizeof(ex));
+    else
+	ex = *eap;
+    ex.arg = fname;
+    ex.cmd = (char_u *)(v == 2 ? "pyfile" : "pyfile3");
+
+    if (v == 2)
+    {
+# ifdef FEAT_PYTHON
+	ex_pyfile(&ex);
+# else
+	vim_snprintf((char *)IObuff, IOSIZE,
+		_("W20: Required python version 2.x not supported, ignoring file: %s"),
+		fname);
+	MSG(IObuff);
+# endif
+	return;
+    }
+    else
+    {
+# ifdef FEAT_PYTHON3
+	ex_py3file(&ex);
+# else
+	vim_snprintf((char *)IObuff, IOSIZE,
+		_("W21: Required python version 3.x not supported, ignoring file: %s"),
+		fname);
+	MSG(IObuff);
+# endif
+	return;
+    }
+}
+
+/*
+ * ":pyxfile {fname}"
+ */
+    void
+ex_pyxfile(exarg_T *eap)
+{
+    source_pyx_file(eap, eap->arg);
+}
+
+/*
+ * ":pyx"
+ */
+    void
+ex_pyx(exarg_T *eap)
+{
+# if defined(FEAT_PYTHON) && defined(FEAT_PYTHON3)
+    init_pyxversion();
+    if (p_pyx == 2)
+	ex_python(eap);
+    else
+	ex_py3(eap);
+# elif defined(FEAT_PYTHON)
+    ex_python(eap);
+# elif defined(FEAT_PYTHON3)
+    ex_py3(eap);
+# endif
+}
+
+/*
+ * ":pyxdo"
+ */
+    void
+ex_pyxdo(exarg_T *eap)
+{
+# if defined(FEAT_PYTHON) && defined(FEAT_PYTHON3)
+    init_pyxversion();
+    if (p_pyx == 2)
+	ex_pydo(eap);
+    else
+	ex_py3do(eap);
+# elif defined(FEAT_PYTHON)
+    ex_pydo(eap);
+# elif defined(FEAT_PYTHON3)
+    ex_py3do(eap);
+# endif
+}
+
 #endif
 
 /*
@@ -3630,7 +4145,7 @@ do_source(
     int			    save_debug_break_level = debug_break_level;
     scriptitem_T	    *si = NULL;
 # ifdef UNIX
-    struct stat		    st;
+    stat_T		    st;
     int			    stat_ok;
 # endif
 #endif
@@ -3777,27 +4292,6 @@ do_source(
     save_sourcing_lnum = sourcing_lnum;
     sourcing_lnum = 0;
 
-#ifdef FEAT_MBYTE
-    cookie.conv.vc_type = CONV_NONE;		/* no conversion */
-
-    /* Read the first line so we can check for a UTF-8 BOM. */
-    firstline = getsourceline(0, (void *)&cookie, 0);
-    if (firstline != NULL && STRLEN(firstline) >= 3 && firstline[0] == 0xef
-			      && firstline[1] == 0xbb && firstline[2] == 0xbf)
-    {
-	/* Found BOM; setup conversion, skip over BOM and recode the line. */
-	convert_setup(&cookie.conv, (char_u *)"utf-8", p_enc);
-	p = string_convert(&cookie.conv, firstline + 3, NULL);
-	if (p == NULL)
-	    p = vim_strsave(firstline + 3);
-	if (p != NULL)
-	{
-	    vim_free(firstline);
-	    firstline = p;
-	}
-    }
-#endif
-
 #ifdef STARTUPTIME
     if (time_fd != NULL)
 	time_push(&tv_rel, &tv_start);
@@ -3888,6 +4382,27 @@ do_source(
 	}
     }
 # endif
+#endif
+
+#ifdef FEAT_MBYTE
+    cookie.conv.vc_type = CONV_NONE;		/* no conversion */
+
+    /* Read the first line so we can check for a UTF-8 BOM. */
+    firstline = getsourceline(0, (void *)&cookie, 0);
+    if (firstline != NULL && STRLEN(firstline) >= 3 && firstline[0] == 0xef
+			      && firstline[1] == 0xbb && firstline[2] == 0xbf)
+    {
+	/* Found BOM; setup conversion, skip over BOM and recode the line. */
+	convert_setup(&cookie.conv, (char_u *)"utf-8", p_enc);
+	p = string_convert(&cookie.conv, firstline + 3, NULL);
+	if (p == NULL)
+	    p = vim_strsave(firstline + 3);
+	if (p != NULL)
+	{
+	    vim_free(firstline);
+	    firstline = p;
+	}
+    }
 #endif
 
     /*
@@ -4316,7 +4831,7 @@ get_one_sourceline(struct source_cookie *sp)
 		{
 		    if (!sp->error)
 		    {
-			msg_source(hl_attr(HLF_W));
+			msg_source(HL_ATTR(HLF_W));
 			EMSG(_("W15: Warning: Wrong line separator, ^M may be missing"));
 		    }
 		    sp->error = TRUE;
@@ -4372,7 +4887,8 @@ script_line_start(void)
     {
 	/* Grow the array before starting the timer, so that the time spent
 	 * here isn't counted. */
-	(void)ga_grow(&si->sn_prl_ga, (int)(sourcing_lnum - si->sn_prl_ga.ga_len));
+	(void)ga_grow(&si->sn_prl_ga,
+				  (int)(sourcing_lnum - si->sn_prl_ga.ga_len));
 	si->sn_prl_idx = sourcing_lnum - 1;
 	while (si->sn_prl_ga.ga_len <= si->sn_prl_idx
 		&& si->sn_prl_ga.ga_len < si->sn_prl_ga.ga_maxlen)
@@ -4407,7 +4923,7 @@ script_line_exec(void)
 }
 
 /*
- * Called when done with a function line.
+ * Called when done with a script line.
  */
     void
 script_line_end(void)
@@ -4766,7 +5282,7 @@ ex_language(exarg_T *eap)
      * Allow abbreviation, but require at least 3 characters to avoid
      * confusion with a two letter language name "me" or "ct". */
     p = skiptowhite(eap->arg);
-    if ((*p == NUL || vim_iswhite(*p)) && p - eap->arg >= 3)
+    if ((*p == NUL || VIM_ISWHITE(*p)) && p - eap->arg >= 3)
     {
 	if (STRNICMP(eap->arg, "messages", p - eap->arg) == 0)
 	{
@@ -4876,23 +5392,9 @@ ex_language(exarg_T *eap)
 # if defined(FEAT_CMDL_COMPL) || defined(PROTO)
 
 static char_u	**locales = NULL;	/* Array of all available locales */
+
+#  ifndef WIN32
 static int	did_init_locales = FALSE;
-
-static void init_locales(void);
-static char_u **find_locales(void);
-
-/*
- * Lazy initialization of all available locales.
- */
-    static void
-init_locales(void)
-{
-    if (!did_init_locales)
-    {
-	did_init_locales = TRUE;
-	locales = find_locales();
-    }
-}
 
 /* Return an array of strings for all available locales + NULL for the
  * last element.  Return NULL in case of error. */
@@ -4933,6 +5435,22 @@ find_locales(void)
     }
     ((char_u **)locales_ga.ga_data)[locales_ga.ga_len] = NULL;
     return (char_u **)locales_ga.ga_data;
+}
+#  endif
+
+/*
+ * Lazy initialization of all available locales.
+ */
+    static void
+init_locales(void)
+{
+#  ifndef WIN32
+    if (!did_init_locales)
+    {
+	did_init_locales = TRUE;
+	locales = find_locales();
+    }
+#  endif
 }
 
 #  if defined(EXITFREE) || defined(PROTO)

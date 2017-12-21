@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4:
+/* vi:set ts=8 sts=4 sw=4 noet:
  *
  * VIM - Vi IMproved	by Bram Moolenaar
  *			Netbeans integration by David Weatherford
@@ -107,7 +107,7 @@ netbeans_close(void)
 	nb_channel = NULL;
     }
 
-#ifdef FEAT_BEVAL
+#ifdef FEAT_BEVAL_GUI
     bevalServers &= ~BEVAL_NETBEANS;
 #endif
 
@@ -220,7 +220,7 @@ netbeans_connect(char *params, int doabort)
 	if (nb_channel != NULL)
 	{
 	    /* success */
-# ifdef FEAT_BEVAL
+# ifdef FEAT_BEVAL_GUI
 	    bevalServers |= BEVAL_NETBEANS;
 # endif
 
@@ -256,7 +256,7 @@ getConnInfo(char *file, char **host, char **port, char **auth)
     char_u *lp;
     char_u *nlp;
 #ifdef UNIX
-    struct stat	st;
+    stat_T	st;
 
     /*
      * For Unix only accept the file when it's not accessible by others.
@@ -382,51 +382,56 @@ handle_key_queue(void)
     void
 netbeans_parse_messages(void)
 {
+    readq_T	*node;
     char_u	*buffer;
     char_u	*p;
     int		own_node;
 
     while (nb_channel != NULL)
     {
-	buffer = channel_peek(nb_channel, PART_SOCK);
-	if (buffer == NULL)
+	node = channel_peek(nb_channel, PART_SOCK);
+	if (node == NULL)
 	    break;	/* nothing to read */
 
-	/* Locate the first line in the first buffer. */
-	p = vim_strchr(buffer, '\n');
+	/* Locate the end of the first line in the first buffer. */
+	p = channel_first_nl(node);
 	if (p == NULL)
 	{
 	    /* Command isn't complete.  If there is no following buffer,
 	     * return (wait for more). If there is another buffer following,
 	     * prepend the text to that buffer and delete this one.  */
-	    if (channel_collapse(nb_channel, PART_SOCK) == FAIL)
+	    if (channel_collapse(nb_channel, PART_SOCK, TRUE) == FAIL)
 		return;
+	    continue;
+	}
+
+	/* There is a complete command at the start of the buffer.
+	 * Terminate it with a NUL.  When no more text is following unlink
+	 * the buffer.  Do this before executing, because new buffers can
+	 * be added while busy handling the command. */
+	*p++ = NUL;
+	if (*p == NUL)
+	{
+	    own_node = TRUE;
+	    buffer = channel_get(nb_channel, PART_SOCK);
+	    /* "node" is now invalid! */
 	}
 	else
 	{
-	    /* There is a complete command at the start of the buffer.
-	     * Terminate it with a NUL.  When no more text is following unlink
-	     * the buffer.  Do this before executing, because new buffers can
-	     * be added while busy handling the command. */
-	    *p++ = NUL;
-	    if (*p == NUL)
-	    {
-		own_node = TRUE;
-		channel_get(nb_channel, PART_SOCK);
-	    }
-	    else
-		own_node = FALSE;
-
-	    /* now, parse and execute the commands */
-	    nb_parse_cmd(buffer);
-
-	    if (own_node)
-		/* buffer finished, dispose of it */
-		vim_free(buffer);
-	    else
-		/* more follows, move it to the start */
-		STRMOVE(buffer, p);
+	    own_node = FALSE;
+	    buffer = node->rq_buffer;
 	}
+
+	/* Now, parse and execute the commands.  This may set nb_channel to
+	 * NULL if the channel is closed. */
+	nb_parse_cmd(buffer);
+
+	if (own_node)
+	    /* buffer finished, dispose of it */
+	    vim_free(buffer);
+	else if (nb_channel != NULL)
+	    /* more follows, move it to the start */
+	    channel_consume(nb_channel, PART_SOCK, (int)(p - buffer));
     }
 }
 
@@ -468,7 +473,7 @@ nb_parse_cmd(char_u *cmd)
     {
 	buf_T	*buf;
 
-	for (buf = firstbuf; buf != NULL; buf = buf->b_next)
+	FOR_ALL_BUFFERS(buf)
 	    buf->b_has_sign_column = FALSE;
 
 	/* The IDE is breaking the connection. */
@@ -556,7 +561,7 @@ static void addsigntype(nbbuf_T *, int localsigntype, char_u *typeName,
 			char_u *tooltip, char_u *glyphfile,
 			char_u *fg, char_u *bg);
 static void print_read_msg(nbbuf_T *buf);
-static void print_save_msg(nbbuf_T *buf, off_t nchars);
+static void print_save_msg(nbbuf_T *buf, off_T nchars);
 
 static int curPCtype = -1;
 
@@ -716,7 +721,7 @@ count_changed_buffers(void)
     int		n;
 
     n = 0;
-    for (bufp = firstbuf; bufp != NULL; bufp = bufp->b_next)
+    FOR_ALL_BUFFERS(bufp)
 	if (bufp->b_changed)
 	    ++n;
     return n;
@@ -760,7 +765,8 @@ netbeans_end(void)
 nb_send(char *buf, char *fun)
 {
     if (nb_channel != NULL)
-	channel_send(nb_channel, PART_SOCK, (char_u *)buf, fun);
+	channel_send(nb_channel, PART_SOCK, (char_u *)buf,
+						       (int)STRLEN(buf), fun);
 }
 
 /*
@@ -1736,7 +1742,7 @@ nb_do_cmd(
 		buf->bufp->b_changed = TRUE;
 	    else
 	    {
-		struct stat	st;
+		stat_T	st;
 
 		/* Assume NetBeans stored the file.  Reset the timestamp to
 		 * avoid "file changed" warnings. */
@@ -1748,10 +1754,8 @@ nb_do_cmd(
 	    buf->modified = buf->bufp->b_changed;
 	    if (prev_b_changed != buf->bufp->b_changed)
 	    {
-#ifdef FEAT_WINDOWS
 		check_status(buf->bufp);
 		redraw_tabline = TRUE;
-#endif
 #ifdef FEAT_TITLE
 		maketitle();
 #endif
@@ -1784,7 +1788,7 @@ nb_do_cmd(
 	}
 	else if (streq((char *)cmd, "showBalloon"))
 	{
-#if defined(FEAT_BEVAL)
+#if defined(FEAT_BEVAL_GUI)
 	    static char	*text = NULL;
 
 	    /*
@@ -2150,7 +2154,7 @@ nb_do_cmd(
 	else if (streq((char *)cmd, "save"))
 	{
 	    /*
-	     * NOTE - This command is obsolete wrt NetBeans. Its left in
+	     * NOTE - This command is obsolete wrt NetBeans. It's left in
 	     * only for historical reasons.
 	     */
 	    if (buf == NULL || buf->bufp == NULL)
@@ -2171,10 +2175,15 @@ nb_do_cmd(
 #endif
 			)
 		{
+#ifdef FEAT_AUTOCMD
+		    bufref_T bufref;
+
+		    set_bufref(&bufref, buf->bufp);
+#endif
 		    buf_write_all(buf->bufp, FALSE);
 #ifdef FEAT_AUTOCMD
 		    /* an autocommand may have deleted the buffer */
-		    if (!buf_valid(buf->bufp))
+		    if (!bufref_valid(&bufref))
 			buf->bufp = NULL;
 #endif
 		}
@@ -2231,7 +2240,7 @@ nb_do_cmd(
 
     /*
      * Is this needed? I moved the netbeans_Xt_connect() later during startup
-     * and it may no longer be necessary. If its not needed then needupdate
+     * and it may no longer be necessary. If it's not needed then needupdate
      * and do_update can also be removed.
      */
     if (buf != NULL && buf->initDone && do_update)
@@ -2272,10 +2281,8 @@ nb_set_curbuf(buf_T *buf)
     if (curbuf != buf) {
 	if (buf_jump_open_win(buf) != NULL)
 	    return;
-# ifdef FEAT_WINDOWS
 	if ((swb_flags & SWB_USETAB) && buf_jump_open_tab(buf) != NULL)
 	    return;
-# endif
 	set_curbuf(buf, DOBUF_GOTO);
     }
 }
@@ -2290,7 +2297,7 @@ coloncmd(char *cmd, ...)
     va_list ap;
 
     va_start(ap, cmd);
-    vim_vsnprintf(buf, sizeof(buf), cmd, ap, NULL);
+    vim_vsnprintf(buf, sizeof(buf), cmd, ap);
     va_end(ap);
 
     nbdebug(("    COLONCMD %s\n", buf));
@@ -2321,7 +2328,8 @@ special_keys(char_u *args)
     char *save_str = nb_unquote(args, NULL);
     char *tok = strtok(save_str, " ");
     char *sep;
-    char keybuf[64];
+#define KEYBUFLEN 64
+    char keybuf[KEYBUFLEN];
     char cmdbuf[256];
 
     while (tok != NULL)
@@ -2348,10 +2356,13 @@ special_keys(char_u *args)
 	    tok++;
 	}
 
-	strcpy(&keybuf[i], tok);
-	vim_snprintf(cmdbuf, sizeof(cmdbuf),
-				"<silent><%s> :nbkey %s<CR>", keybuf, keybuf);
-	do_map(0, (char_u *)cmdbuf, NORMAL, FALSE);
+	if (strlen(tok) + i < KEYBUFLEN)
+	{
+	    strcpy(&keybuf[i], tok);
+	    vim_snprintf(cmdbuf, sizeof(cmdbuf),
+				 "<silent><%s> :nbkey %s<CR>", keybuf, keybuf);
+	    do_map(0, (char_u *)cmdbuf, NORMAL, FALSE);
+	}
 	tok = strtok(NULL, " ");
     }
     vim_free(save_str);
@@ -2495,7 +2506,7 @@ netbeans_beval_cb(
 
     /* Don't do anything when 'ballooneval' is off, messages scrolled the
      * windows up or we have no connection. */
-    if (!p_beval || msg_scrolled > 0 || !NETBEANS_OPEN)
+    if (!can_use_beval() || !NETBEANS_OPEN)
 	return;
 
     if (get_beval_info(beval, TRUE, &wp, &lnum, &text, &col) == OK)
@@ -2584,6 +2595,23 @@ netbeans_send_disconnect(void)
 	nb_send(buf, "netbeans_disconnect");
     }
 }
+
+#if defined(FEAT_EVAL) || defined(PROTO)
+    int
+set_ref_in_nb_channel(int copyID)
+{
+    int abort = FALSE;
+    typval_T tv;
+
+    if (nb_channel != NULL)
+    {
+	tv.v_type = VAR_CHANNEL;
+	tv.vval.v_channel = nb_channel;
+	abort = set_ref_in_item(&tv, copyID, NULL, NULL);
+    }
+    return abort;
+}
+#endif
 
 #if defined(FEAT_GUI_X11) || defined(FEAT_GUI_W32) || defined(PROTO)
 /*
@@ -2828,7 +2856,7 @@ netbeans_unmodified(buf_T *bufp UNUSED)
 }
 
 /*
- * Send a button release event back to netbeans. Its up to netbeans
+ * Send a button release event back to netbeans. It's up to netbeans
  * to decide what to do (if anything) with this event.
  */
     void
@@ -2844,7 +2872,7 @@ netbeans_button_release(int button)
 
     if (bufno >= 0 && curwin != NULL && curwin->w_buffer == curbuf)
     {
-	int col = mouse_col - W_WINCOL(curwin)
+	int col = mouse_col - curwin->w_wincol
 			      - ((curwin->w_p_nu || curwin->w_p_rnu) ? 9 : 1);
 	long off = pos2off(curbuf, &curwin->w_cursor);
 
@@ -3069,24 +3097,9 @@ netbeans_draw_multisign_indicator(int row)
 
 #if GTK_CHECK_VERSION(3,0,0)
     cr = cairo_create(gui.surface);
-    {
-	GdkVisual *visual = NULL;
-	guint32 r_mask, g_mask, b_mask;
-	gint r_shift, g_shift, b_shift;
-
-	visual = gdk_window_get_visual(gtk_widget_get_window(gui.drawarea));
-	if (visual != NULL)
-	{
-	    gdk_visual_get_red_pixel_details(visual, &r_mask, &r_shift, NULL);
-	    gdk_visual_get_green_pixel_details(visual, &g_mask, &g_shift, NULL);
-	    gdk_visual_get_blue_pixel_details(visual, &b_mask, &b_shift, NULL);
-
-	    cairo_set_source_rgb(cr,
-		    ((gui.fgcolor->red & r_mask) >> r_shift) / 255.0,
-		    ((gui.fgcolor->green & g_mask) >> g_shift) / 255.0,
-		    ((gui.fgcolor->blue & b_mask) >> b_shift) / 255.0);
-	}
-    }
+    cairo_set_source_rgba(cr,
+	    gui.fgcolor->red, gui.fgcolor->green, gui.fgcolor->blue,
+	    gui.fgcolor->alpha);
 #endif
 
     x = 0;
@@ -3440,7 +3453,7 @@ pos2off(buf_T *buf, pos_T *pos)
 
 
 /*
- * This message is printed after NetBeans opens a new file. Its
+ * This message is printed after NetBeans opens a new file. It's
  * similar to the message readfile() uses, but since NetBeans
  * doesn't normally call readfile, we do our own.
  */
@@ -3448,7 +3461,7 @@ pos2off(buf_T *buf, pos_T *pos)
 print_read_msg(nbbuf_T *buf)
 {
     int	    lnum = buf->bufp->b_ml.ml_line_count;
-    off_t   nchars = buf->bufp->b_orig_size;
+    off_T   nchars = buf->bufp->b_orig_size;
     char_u  c;
 
     msg_add_fname(buf->bufp, buf->bufp->b_ffname);
@@ -3482,7 +3495,7 @@ print_read_msg(nbbuf_T *buf)
  * writing a file.
  */
     static void
-print_save_msg(nbbuf_T *buf, off_t nchars)
+print_save_msg(nbbuf_T *buf, off_T nchars)
 {
     char_u	c;
     char_u	*p;

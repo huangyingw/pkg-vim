@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4:
+/* vi:set ts=8 sts=4 sw=4 noet:
  *
  * VIM - Vi IMproved	by Bram Moolenaar
  *
@@ -14,7 +14,6 @@
  */
 
 #define NO_X11_INCLUDES
-#define BalloonEval int   /* used in header files */
 
 #include "vim.h"
 

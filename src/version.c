@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4:
+/* vi:set ts=8 sts=4 sw=4 noet:
  *
  * VIM - Vi IMproved		by Bram Moolenaar
  *
@@ -17,8 +17,9 @@
  * Vim originated from Stevie version 3.6 (Fish disk 217) by GRWalter (Fred)
  * It has been changed beyond recognition since then.
  *
- * Differences between version 6.x and 7.x can be found with ":help version7".
- * Differences between version 5.x and 6.x can be found with ":help version6".
+ * Differences between version 7.4 and 8.x can be found with ":help version8".
+ * Differences between version 6.4 and 7.x can be found with ":help version7".
+ * Differences between version 5.8 and 6.x can be found with ":help version6".
  * Differences between version 4.x and 5.x can be found with ":help version5".
  * Differences between version 3.0 and 4.x can be found with ":help version4".
  * All the remarks about older versions have been removed, they are not very
@@ -82,10 +83,20 @@ static char *(features[]) =
 #else
 	"-autocmd",
 #endif
-#ifdef FEAT_BEVAL
+#ifdef FEAT_AUTOSERVERNAME
+	"+autoservername",
+#else
+	"-autoservername",
+#endif
+#ifdef FEAT_BEVAL_GUI
 	"+balloon_eval",
 #else
 	"-balloon_eval",
+#endif
+#ifdef FEAT_BEVAL_TERM
+	"+balloon_eval_term",
+#else
+	"-balloon_eval_term",
 #endif
 #ifdef FEAT_BROWSE
 	"+browse",
@@ -304,6 +315,11 @@ static char *(features[]) =
 #else
 	"-keymap",
 #endif
+#ifdef FEAT_EVAL
+	"+lambda",
+#else
+	"-lambda",
+#endif
 #ifdef FEAT_LANGMAP
 	"+langmap",
 #else
@@ -455,6 +471,11 @@ static char *(features[]) =
 #else
 	"-netbeans_intg",
 #endif
+#ifdef FEAT_NUM64
+	"+num64",
+#else
+	"-num64",
+#endif
 #ifdef FEAT_GUI_W32
 # ifdef FEAT_OLE
 	"+ole",
@@ -575,7 +596,7 @@ static char *(features[]) =
 	"-syntax",
 #endif
 	    /* only interesting on Unix systems */
-#if defined(USE_SYSTEM) && (defined(UNIX) || defined(__EMX__))
+#if defined(USE_SYSTEM) && defined(UNIX)
 	"+system()",
 #endif
 #ifdef FEAT_TAG_BINS
@@ -602,8 +623,18 @@ static char *(features[]) =
 #else
 	"-tcl",
 #endif
-#if defined(UNIX) || defined(__EMX__)
-/* only Unix (or OS/2 with EMX!) can have terminfo instead of termcap */
+#ifdef FEAT_TERMGUICOLORS
+	"+termguicolors",
+#else
+	"-termguicolors",
+#endif
+#ifdef FEAT_TERMINAL
+	"+terminal",
+#else
+	"-terminal",
+#endif
+#if defined(UNIX)
+/* only Unix can have terminfo instead of termcap */
 # ifdef TERMINFO
 	"+terminfo",
 # else
@@ -646,11 +677,7 @@ static char *(features[]) =
 #else
 	"-user_commands",
 #endif
-#ifdef FEAT_WINDOWS
 	"+vertsplit",
-#else
-	"-vertsplit",
-#endif
 #ifdef FEAT_VIRTUALEDIT
 	"+virtualedit",
 #else
@@ -682,11 +709,7 @@ static char *(features[]) =
 #else
 	"-wildmenu",
 #endif
-#ifdef FEAT_WINDOWS
 	"+windows",
-#else
-	"-windows",
-#endif
 #ifdef FEAT_WRITEBACKUP
 	"+writebackup",
 #else
@@ -709,6 +732,19 @@ static char *(features[]) =
 #else
 	"-xim",
 #endif
+#ifdef WIN3264
+# ifdef FEAT_XPM_W32
+	"+xpm_w32",
+# else
+	"-xpm_w32",
+# endif
+#else
+# ifdef HAVE_XPM
+	"+xpm",
+# else
+	"-xpm",
+# endif
+#endif
 #if defined(UNIX) || defined(VMS)
 # ifdef USE_XSMP_INTERACT
 	"+xsmp_interact",
@@ -730,600 +766,11 @@ static char *(features[]) =
 #else
 	"-xterm_save",
 #endif
-#ifdef WIN3264
-# ifdef FEAT_XPM_W32
-	"+xpm_w32",
-# else
-	"-xpm_w32",
-# endif
-#else
-# ifdef HAVE_XPM
-	"+xpm",
-# else
-	"-xpm",
-# endif
-#endif
 	NULL
 };
 
 static int included_patches[] =
 {   /* Add new patch number below this line */
-/**/
-    1689,
-/**/
-    1688,
-/**/
-    1687,
-/**/
-    1686,
-/**/
-    1685,
-/**/
-    1684,
-/**/
-    1683,
-/**/
-    1682,
-/**/
-    1681,
-/**/
-    1680,
-/**/
-    1679,
-/**/
-    1678,
-/**/
-    1677,
-/**/
-    1676,
-/**/
-    1675,
-/**/
-    1674,
-/**/
-    1673,
-/**/
-    1672,
-/**/
-    1671,
-/**/
-    1670,
-/**/
-    1669,
-/**/
-    1668,
-/**/
-    1667,
-/**/
-    1666,
-/**/
-    1665,
-/**/
-    1664,
-/**/
-    1663,
-/**/
-    1662,
-/**/
-    1661,
-/**/
-    1660,
-/**/
-    1659,
-/**/
-    1658,
-/**/
-    1657,
-/**/
-    1656,
-/**/
-    1655,
-/**/
-    1654,
-/**/
-    1653,
-/**/
-    1652,
-/**/
-    1651,
-/**/
-    1650,
-/**/
-    1649,
-/**/
-    1648,
-/**/
-    1647,
-/**/
-    1646,
-/**/
-    1645,
-/**/
-    1644,
-/**/
-    1643,
-/**/
-    1642,
-/**/
-    1641,
-/**/
-    1640,
-/**/
-    1639,
-/**/
-    1638,
-/**/
-    1637,
-/**/
-    1636,
-/**/
-    1635,
-/**/
-    1634,
-/**/
-    1633,
-/**/
-    1632,
-/**/
-    1631,
-/**/
-    1630,
-/**/
-    1629,
-/**/
-    1628,
-/**/
-    1627,
-/**/
-    1626,
-/**/
-    1625,
-/**/
-    1624,
-/**/
-    1623,
-/**/
-    1622,
-/**/
-    1621,
-/**/
-    1620,
-/**/
-    1619,
-/**/
-    1618,
-/**/
-    1617,
-/**/
-    1616,
-/**/
-    1615,
-/**/
-    1614,
-/**/
-    1613,
-/**/
-    1612,
-/**/
-    1611,
-/**/
-    1610,
-/**/
-    1609,
-/**/
-    1608,
-/**/
-    1607,
-/**/
-    1606,
-/**/
-    1605,
-/**/
-    1604,
-/**/
-    1603,
-/**/
-    1602,
-/**/
-    1601,
-/**/
-    1600,
-/**/
-    1599,
-/**/
-    1598,
-/**/
-    1597,
-/**/
-    1596,
-/**/
-    1595,
-/**/
-    1594,
-/**/
-    1593,
-/**/
-    1592,
-/**/
-    1591,
-/**/
-    1590,
-/**/
-    1589,
-/**/
-    1588,
-/**/
-    1587,
-/**/
-    1586,
-/**/
-    1585,
-/**/
-    1584,
-/**/
-    1583,
-/**/
-    1582,
-/**/
-    1581,
-/**/
-    1580,
-/**/
-    1579,
-/**/
-    1578,
-/**/
-    1577,
-/**/
-    1576,
-/**/
-    1575,
-/**/
-    1574,
-/**/
-    1573,
-/**/
-    1572,
-/**/
-    1571,
-/**/
-    1570,
-/**/
-    1569,
-/**/
-    1568,
-/**/
-    1567,
-/**/
-    1566,
-/**/
-    1565,
-/**/
-    1564,
-/**/
-    1563,
-/**/
-    1562,
-/**/
-    1561,
-/**/
-    1560,
-/**/
-    1559,
-/**/
-    1558,
-/**/
-    1557,
-/**/
-    1556,
-/**/
-    1555,
-/**/
-    1554,
-/**/
-    1553,
-/**/
-    1552,
-/**/
-    1551,
-/**/
-    1550,
-/**/
-    1549,
-/**/
-    1548,
-/**/
-    1547,
-/**/
-    1546,
-/**/
-    1545,
-/**/
-    1544,
-/**/
-    1543,
-/**/
-    1542,
-/**/
-    1541,
-/**/
-    1540,
-/**/
-    1539,
-/**/
-    1538,
-/**/
-    1537,
-/**/
-    1536,
-/**/
-    1535,
-/**/
-    1534,
-/**/
-    1533,
-/**/
-    1532,
-/**/
-    1531,
-/**/
-    1530,
-/**/
-    1529,
-/**/
-    1528,
-/**/
-    1527,
-/**/
-    1526,
-/**/
-    1525,
-/**/
-    1524,
-/**/
-    1523,
-/**/
-    1522,
-/**/
-    1521,
-/**/
-    1520,
-/**/
-    1519,
-/**/
-    1518,
-/**/
-    1517,
-/**/
-    1516,
-/**/
-    1515,
-/**/
-    1514,
-/**/
-    1513,
-/**/
-    1512,
-/**/
-    1511,
-/**/
-    1510,
-/**/
-    1509,
-/**/
-    1508,
-/**/
-    1507,
-/**/
-    1506,
-/**/
-    1505,
-/**/
-    1504,
-/**/
-    1503,
-/**/
-    1502,
-/**/
-    1501,
-/**/
-    1500,
-/**/
-    1499,
-/**/
-    1498,
-/**/
-    1497,
-/**/
-    1496,
-/**/
-    1495,
-/**/
-    1494,
-/**/
-    1493,
-/**/
-    1492,
-/**/
-    1491,
-/**/
-    1490,
-/**/
-    1489,
-/**/
-    1488,
-/**/
-    1487,
-/**/
-    1486,
-/**/
-    1485,
-/**/
-    1484,
-/**/
-    1483,
-/**/
-    1482,
-/**/
-    1481,
-/**/
-    1480,
-/**/
-    1479,
-/**/
-    1478,
-/**/
-    1477,
-/**/
-    1476,
-/**/
-    1475,
-/**/
-    1474,
-/**/
-    1473,
-/**/
-    1472,
-/**/
-    1471,
-/**/
-    1470,
-/**/
-    1469,
-/**/
-    1468,
-/**/
-    1467,
-/**/
-    1466,
-/**/
-    1465,
-/**/
-    1464,
-/**/
-    1463,
-/**/
-    1462,
-/**/
-    1461,
-/**/
-    1460,
-/**/
-    1459,
-/**/
-    1458,
-/**/
-    1457,
-/**/
-    1456,
-/**/
-    1455,
-/**/
-    1454,
-/**/
-    1453,
-/**/
-    1452,
-/**/
-    1451,
-/**/
-    1450,
-/**/
-    1449,
-/**/
-    1448,
-/**/
-    1447,
-/**/
-    1446,
-/**/
-    1445,
-/**/
-    1444,
-/**/
-    1443,
-/**/
-    1442,
-/**/
-    1441,
-/**/
-    1440,
-/**/
-    1439,
-/**/
-    1438,
-/**/
-    1437,
-/**/
-    1436,
-/**/
-    1435,
-/**/
-    1434,
-/**/
-    1433,
-/**/
-    1432,
-/**/
-    1431,
-/**/
-    1430,
-/**/
-    1429,
-/**/
-    1428,
-/**/
-    1427,
-/**/
-    1426,
-/**/
-    1425,
-/**/
-    1424,
-/**/
-    1423,
-/**/
-    1422,
-/**/
-    1421,
-/**/
-    1420,
-/**/
-    1419,
-/**/
-    1418,
-/**/
-    1417,
-/**/
-    1416,
-/**/
-    1415,
-/**/
-    1414,
-/**/
-    1413,
-/**/
-    1412,
-/**/
-    1411,
-/**/
-    1410,
-/**/
-    1409,
-/**/
-    1408,
-/**/
-    1407,
-/**/
-    1406,
-/**/
-    1405,
-/**/
-    1404,
-/**/
-    1403,
-/**/
-    1402,
 /**/
     1401,
 /**/
@@ -4268,18 +3715,11 @@ list_version(void)
     MSG(longVersion);
 #ifdef WIN3264
 # ifdef FEAT_GUI_W32
-#  if defined(_MSC_VER) && (_MSC_VER <= 1010)
-    /* Only MS VC 4.1 and earlier can do Win32s */
-    MSG_PUTS(_("\nMS-Windows 16/32-bit GUI version"));
-#  else
-#   ifdef _WIN64
+#  ifdef _WIN64
     MSG_PUTS(_("\nMS-Windows 64-bit GUI version"));
-#   else
+#  else
     MSG_PUTS(_("\nMS-Windows 32-bit GUI version"));
-#   endif
 #  endif
-    if (gui_is_win32s())
-	MSG_PUTS(_(" in Win32s mode"));
 # ifdef FEAT_OLE
     MSG_PUTS(_(" with OLE support"));
 # endif
@@ -4291,15 +3731,11 @@ list_version(void)
 #  endif
 # endif
 #endif
-#ifdef MACOS
-# ifdef MACOS_X
-#  ifdef MACOS_X_UNIX
-    MSG_PUTS(_("\nMacOS X (unix) version"));
-#  else
-    MSG_PUTS(_("\nMacOS X version"));
-#  endif
-#else
-    MSG_PUTS(_("\nMacOS version"));
+#if defined(MACOS_X)
+# if defined(MACOS_X_DARWIN)
+    MSG_PUTS(_("\nmacOS version"));
+# else
+    MSG_PUTS(_("\nmacOS version w/o darwin feat."));
 # endif
 #endif
 
@@ -4432,9 +3868,6 @@ list_version(void)
 #	 if defined(TARGET_API_MAC_OSX) && TARGET_API_MAC_OSX
     MSG_PUTS(_("with Cocoa GUI."));
 #	 else
-#	  if defined(MACOS)
-    MSG_PUTS(_("with (classic) GUI."));
-#	  endif
 #	 endif
 #	endif
 #      endif
@@ -4497,6 +3930,9 @@ list_version(void)
     version_msg("\"\n");
 # endif
 #endif
+    version_msg(_("       defaults file: \""));
+    version_msg(VIM_DEFAULTS_FILE);
+    version_msg("\"\n");
 #ifdef FEAT_GUI
 # ifdef SYS_MENU_FILE
     version_msg(_("    system menu file: \""));
@@ -4561,11 +3997,9 @@ static void do_intro_line(int row, char_u *mesg, int add_version, int attr);
     void
 maybe_intro_message(void)
 {
-    if (bufempty()
+    if (BUFEMPTY()
 	    && curbuf->b_fname == NULL
-#ifdef FEAT_WINDOWS
 	    && firstwin->w_next == NULL
-#endif
 	    && vim_strchr(p_shm, SHM_INTRO) == NULL)
 	intro_message(FALSE);
 }
@@ -4600,7 +4034,7 @@ intro_message(
 	"",
 	N_("type  :q<Enter>               to exit         "),
 	N_("type  :help<Enter>  or  <F1>  for on-line help"),
-	N_("type  :help version7<Enter>   for version info"),
+	N_("type  :help version8<Enter>   for version info"),
 	NULL,
 	"",
 	N_("Running in Vi compatible mode"),
@@ -4637,16 +4071,10 @@ intro_message(
     blanklines = (int)Rows - ((sizeof(lines) / sizeof(char *)) - 1);
     if (!p_cp)
 	blanklines += 4;  /* add 4 for not showing "Vi compatible" message */
-#if defined(WIN3264) && !defined(FEAT_GUI_W32)
-    if (mch_windows95())
-	blanklines -= 3;  /* subtract 3 for showing "Windows 95" message */
-#endif
 
-#ifdef FEAT_WINDOWS
     /* Don't overwrite a statusline.  Depends on 'cmdheight'. */
     if (p_ls > 1)
 	blanklines -= Rows - topframe->fr_height;
-#endif
     if (blanklines < 0)
 	blanklines = 0;
 
@@ -4689,17 +4117,6 @@ intro_message(
 		do_intro_line(row, (char_u *)_(p), i == 2, 0);
 	    ++row;
 	}
-#if defined(WIN3264) && !defined(FEAT_GUI_W32)
-	if (mch_windows95())
-	{
-	    do_intro_line(++row,
-		    (char_u *)_("WARNING: Windows 95/98/ME detected"),
-							FALSE, hl_attr(HLF_E));
-	    do_intro_line(++row,
-		(char_u *)_("type  :help windows95<Enter>  for info on this"),
-								    FALSE, 0);
-	}
-#endif
     }
 
     /* Make the wait-return message appear just below the text. */
@@ -4726,7 +4143,7 @@ do_intro_line(
     if (*mesg == ' ')
     {
 	vim_strncpy(modby, (char_u *)_("Modified by "), MODBY_LEN - 1);
-	l = STRLEN(modby);
+	l = (int)STRLEN(modby);
 	vim_strncpy(modby + l, (char_u *)MODIFIED_BY, MODBY_LEN - l - 1);
 	mesg = modby;
     }
@@ -4772,7 +4189,7 @@ do_intro_line(
 #endif
 		clen += byte2cells(p[l]);
 	}
-	screen_puts_len(p, l, row, col, *p == '<' ? hl_attr(HLF_8) : attr);
+	screen_puts_len(p, l, row, col, *p == '<' ? HL_ATTR(HLF_8) : attr);
 	col += clen;
     }
 
