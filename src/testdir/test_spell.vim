@@ -4,6 +4,16 @@ if !has('spell')
   finish
 endif
 
+func TearDown()
+  set nospell
+  call delete('Xtest.aff')
+  call delete('Xtest.dic')
+  call delete('Xtest.latin1.add')
+  call delete('Xtest.latin1.add.spl')
+  call delete('Xtest.latin1.spl')
+  call delete('Xtest.latin1.sug')
+endfunc
+
 func Test_wrap_search()
   new
   call setline(1, ['The', '', 'A plong line with two zpelling mistakes', '', 'End'])
@@ -226,6 +236,7 @@ endfunc
 func Test_zz_sal_and_addition()
   set enc=latin1
   set spellfile=
+  call writefile(g:test_data_dic1, "Xtest.dic")
   call writefile(g:test_data_aff_sal, "Xtest.aff")
   mkspell! Xtest Xtest
   set spl=Xtest.latin1.spl spell
@@ -258,6 +269,15 @@ func Test_zz_sal_and_addition()
   set spl=Xtest_ca.latin1.spl
   call assert_equal("elequint", FirstSpellWord())
   call assert_equal("elekwint", SecondSpellWord())
+endfunc
+
+func Test_region_error()
+  messages clear
+  call writefile(["/regions=usgbnz", "elequint/0"], "Xtest.latin1.add")
+  mkspell! Xtest.latin1.add.spl Xtest.latin1.add
+  call assert_match('Invalid region nr in Xtest.latin1.add line 2: 0', execute('messages'))
+  call delete('Xtest.latin1.add')
+  call delete('Xtest.latin1.add.spl')
 endfunc
 
 " Check using z= in new buffer (crash fixed by patch 7.4a.028).

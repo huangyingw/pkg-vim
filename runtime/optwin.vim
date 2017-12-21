@@ -1,20 +1,17 @@
 " These commands create the option window.
 "
 " Maintainer:	Bram Moolenaar <Bram@vim.org>
-" Last Change:	2017 Mar 06
+" Last Change:	2017 Nov 21
 
 " If there already is an option window, jump to that one.
-if bufwinnr("option-window") > 0
-  let s:thiswin = winnr()
-  while 1
-    if @% == "option-window"
+let buf = bufnr('option-window')
+if buf >= 0
+  let winids = win_findbuf(buf)
+  if len(winids) > 0
+    if win_gotoid(winids[0]) == 1
       finish
     endif
-    wincmd w
-    if s:thiswin == winnr()
-      break
-    endif
-  endwhile
+  endif
 endif
 
 " Make sure the '<' flag is not included in 'cpoptions', otherwise <CR> would
@@ -141,8 +138,8 @@ while exists("b:current_syntax") && b:current_syntax == "help"
   endif
 endwhile
 
-" Open the window
-new option-window
+" Open the window.  $OPTWIN_CMD is set to "tab" for ":tab options".
+exe $OPTWIN_CMD . ' new option-window'
 setlocal ts=15 tw=0 noro buftype=nofile
 
 " Insert help and a "set" command for each option.
@@ -506,6 +503,18 @@ if has("cursorbind")
   call append("$", "\t(local to window)")
   call <SID>BinOptionL("crb")
 endif
+if has("terminal")
+  call append("$", "termsize\tsize of a terminal window")
+  call append("$", "\t(local to window)")
+  call <SID>OptionL("tms")
+  call append("$", "termkey\tkey that precedes Vim commands in a terminal window")
+  call append("$", "\t(local to window)")
+  call <SID>OptionL("tk")
+  if exists("&winptydll")
+    call append("$", "winptydll\tname of the winpty dynamic library")
+    call <SID>OptionG("winptydll", &winptydll)
+  endif
+endif
 
 
 call <SID>Header("multiple tab pages")
@@ -638,11 +647,17 @@ if has("gui")
   endif
   call append("$", "linespace\tnumber of pixel lines to use between characters")
   call append("$", " \tset lsp=" . &lsp)
-  if has("balloon_eval")
+  if has("balloon_eval") || has("balloon_eval_term")
     call append("$", "balloondelay\tdelay in milliseconds before a balloon may pop up")
     call append("$", " \tset bdlay=" . &bdlay)
-    call append("$", "ballooneval\twhether the balloon evaluation is to be used")
-    call <SID>BinOptionG("beval", &beval)
+    if has("balloon_eval")
+      call append("$", "ballooneval\tuse balloon evaluation in the GUI")
+      call <SID>BinOptionG("beval", &beval)
+    endif
+    if has("balloon_eval_term")
+      call append("$", "balloonevalterm\tuse balloon evaluation in the terminal")
+      call <SID>BinOptionG("bevalterm", &beval)
+    endif
     if has("eval")
       call append("$", "balloonexpr\texpression to show in balloon eval")
       call append("$", " \tset bexpr=" . &bexpr)
@@ -1216,6 +1231,8 @@ endif
 call append("$", "iminsert\tin Insert mode: 1: use :lmap; 2: use IM; 0: neither")
 call append("$", "\t(local to window)")
 call <SID>OptionL("imi")
+call append("$", "imstyle\tinput method style, 0: on-the-spot, 1: over-the-spot")
+call <SID>OptionG("imst", &imst)
 call append("$", "imsearch\tentering a search pattern: 1: use :lmap; 2: use IM; 0: neither")
 call append("$", "\t(local to window)")
 call <SID>OptionL("ims")
@@ -1296,6 +1313,8 @@ endif
 if has("viminfo")
   call append("$", "viminfo\tlist that specifies what to write in the viminfo file")
   call <SID>OptionG("vi", &vi)
+  call append("$", "viminfofile\tfile name used for the viminfo file")
+  call <SID>OptionG("vif", &vif)
 endif
 if has("quickfix")
   call append("$", "bufhidden\twhat happens with a buffer when it's no longer in a window")
@@ -1346,6 +1365,12 @@ endif
 if exists("&tcldll")
   call append("$", "tcldll\tname of the Tcl dynamic library")
   call <SID>OptionG("tcldll", &tcldll)
+endif
+if exists("&mzschemedll")
+  call append("$", "mzschemedll\tname of the Tcl dynamic library")
+  call <SID>OptionG("mzschemedll", &mzschemedll)
+  call append("$", "mzschemegcdll\tname of the Tcl GC dynamic library")
+  call <SID>OptionG("mzschemegcdll", &mzschemegcdll)
 endif
 
 set cpo&vim

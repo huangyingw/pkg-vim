@@ -187,6 +187,12 @@ static struct vimvar
     {VV_NAME("t_none",		 VAR_NUMBER), VV_RO},
     {VV_NAME("t_job",		 VAR_NUMBER), VV_RO},
     {VV_NAME("t_channel",	 VAR_NUMBER), VV_RO},
+    {VV_NAME("termrfgresp",	 VAR_STRING), VV_RO},
+    {VV_NAME("termrbgresp",	 VAR_STRING), VV_RO},
+    {VV_NAME("termu7resp",	 VAR_STRING), VV_RO},
+    {VV_NAME("termstyleresp",	VAR_STRING), VV_RO},
+    {VV_NAME("termblinkresp",	VAR_STRING), VV_RO},
+    {VV_NAME("event",		VAR_DICT), VV_RO},
 };
 
 /* shorthand */
@@ -207,9 +213,7 @@ static char_u *skip_var_one(char_u *arg);
 static void list_glob_vars(int *first);
 static void list_buf_vars(int *first);
 static void list_win_vars(int *first);
-#ifdef FEAT_WINDOWS
 static void list_tab_vars(int *first);
-#endif
 static void list_vim_vars(int *first);
 static void list_script_vars(int *first);
 static char_u *list_arg_vars(exarg_T *eap, char_u *arg, int *first);
@@ -316,8 +320,9 @@ eval_init(void)
 
     set_vim_var_nr(VV_SEARCHFORWARD, 1L);
     set_vim_var_nr(VV_HLSEARCH, 1L);
-    set_vim_var_dict(VV_COMPLETED_ITEM, dict_alloc());
+    set_vim_var_dict(VV_COMPLETED_ITEM, dict_alloc_lock(VAR_FIXED));
     set_vim_var_list(VV_ERRORS, list_alloc());
+    set_vim_var_dict(VV_EVENT, dict_alloc_lock(VAR_FIXED));
 
     set_vim_var_nr(VV_FALSE, VVAL_FALSE);
     set_vim_var_nr(VV_TRUE, VVAL_TRUE);
@@ -693,6 +698,70 @@ eval_to_bool(
     return (int)retval;
 }
 
+    static int
+eval_expr_typval(typval_T *expr, typval_T *argv, int argc, typval_T *rettv)
+{
+    char_u	*s;
+    int		dummy;
+    char_u	buf[NUMBUFLEN];
+
+    if (expr->v_type == VAR_FUNC)
+    {
+	s = expr->vval.v_string;
+	if (s == NULL || *s == NUL)
+	    return FAIL;
+	if (call_func(s, (int)STRLEN(s), rettv, argc, argv, NULL,
+				     0L, 0L, &dummy, TRUE, NULL, NULL) == FAIL)
+	    return FAIL;
+    }
+    else if (expr->v_type == VAR_PARTIAL)
+    {
+	partial_T   *partial = expr->vval.v_partial;
+
+	s = partial_name(partial);
+	if (s == NULL || *s == NUL)
+	    return FAIL;
+	if (call_func(s, (int)STRLEN(s), rettv, argc, argv, NULL,
+				  0L, 0L, &dummy, TRUE, partial, NULL) == FAIL)
+	    return FAIL;
+    }
+    else
+    {
+	s = get_tv_string_buf_chk(expr, buf);
+	if (s == NULL)
+	    return FAIL;
+	s = skipwhite(s);
+	if (eval1(&s, rettv, TRUE) == FAIL)
+	    return FAIL;
+	if (*s != NUL)  /* check for trailing chars after expr */
+	{
+	    EMSG2(_(e_invexpr2), s);
+	    return FAIL;
+	}
+    }
+    return OK;
+}
+
+/*
+ * Like eval_to_bool() but using a typval_T instead of a string.
+ * Works for string, funcref and partial.
+ */
+    int
+eval_expr_to_bool(typval_T *expr, int *error)
+{
+    typval_T	rettv;
+    int		res;
+
+    if (eval_expr_typval(expr, NULL, 0, &rettv) == FAIL)
+    {
+	*error = TRUE;
+	return FALSE;
+    }
+    res = (get_tv_number_chk(&rettv, error) != 0);
+    clear_tv(&rettv);
+    return res;
+}
+
 /*
  * Top level evaluation function, returning a string.  If "skip" is TRUE,
  * only parsing to "nextcmd" is done, without reporting errors.  Return
@@ -989,8 +1058,13 @@ call_vim_function(
 	if (str_arg_only)
 	    len = 0;
 	else
-	    /* Recognize a number argument, the others must be strings. */
+	{
+	    /* Recognize a number argument, the others must be strings. A dash
+	     * is a string too. */
 	    vim_str2nr(argv[i], NULL, &len, STR2NR_ALL, &n, NULL, 0);
+	    if (len == 1 && *argv[i] == '-')
+		len = 0;
+	}
 	if (len != 0 && len == (int)STRLEN(argv[i]))
 	{
 	    argvars[i].v_type = VAR_NUMBER;
@@ -1201,9 +1275,7 @@ ex_let(exarg_T *eap)
 	    list_glob_vars(&first);
 	    list_buf_vars(&first);
 	    list_win_vars(&first);
-#ifdef FEAT_WINDOWS
 	    list_tab_vars(&first);
-#endif
 	    list_script_vars(&first);
 	    list_func_vars(&first);
 	    list_vim_vars(&first);
@@ -1465,7 +1537,6 @@ list_win_vars(int *first)
 						 (char_u *)"w:", TRUE, first);
 }
 
-#ifdef FEAT_WINDOWS
 /*
  * List tab page variables.
  */
@@ -1475,7 +1546,6 @@ list_tab_vars(int *first)
     list_hashtable_vars(&curtab->tp_vars->dv_hashtab,
 						 (char_u *)"t:", TRUE, first);
 }
-#endif
 
 /*
  * List Vim variables.
@@ -1561,9 +1631,7 @@ list_arg_vars(exarg_T *eap, char_u *arg, int *first)
 				case 'g': list_glob_vars(first); break;
 				case 'b': list_buf_vars(first); break;
 				case 'w': list_win_vars(first); break;
-#ifdef FEAT_WINDOWS
 				case 't': list_tab_vars(first); break;
-#endif
 				case 'v': list_vim_vars(first); break;
 				case 's': list_script_vars(first); break;
 				case 'l': list_func_vars(first); break;
@@ -1708,7 +1776,10 @@ ex_let_one(
 						       &stringval, opt_flags);
 		if ((opt_type == 1 && *op == '.')
 			|| (opt_type == 0 && *op != '.'))
+		{
 		    EMSG2(_(e_letwrong), op);
+		    s = NULL;  /* don't set the value */
+		}
 		else
 		{
 		    if (opt_type == 1)  /* number */
@@ -1887,7 +1958,10 @@ get_lval(
 
     cc = *p;
     *p = NUL;
-    v = find_var(lp->ll_name, &ht, flags & GLV_NO_AUTOLOAD);
+    /* Only pass &ht when we would write to the variable, it prevents autoload
+     * as well. */
+    v = find_var(lp->ll_name, (flags & GLV_READ_ONLY) ? NULL : &ht,
+						      flags & GLV_NO_AUTOLOAD);
     if (v == NULL && !quiet)
 	EMSG2(_(e_undefvar), lp->ll_name);
     *p = cc;
@@ -3071,9 +3145,7 @@ get_user_var_name(expand_T *xp, int idx)
     static long_u	gdone;
     static long_u	bdone;
     static long_u	wdone;
-#ifdef FEAT_WINDOWS
     static long_u	tdone;
-#endif
     static int		vidx;
     static hashitem_T	*hi;
     hashtab_T		*ht;
@@ -3081,9 +3153,7 @@ get_user_var_name(expand_T *xp, int idx)
     if (idx == 0)
     {
 	gdone = bdone = wdone = vidx = 0;
-#ifdef FEAT_WINDOWS
 	tdone = 0;
-#endif
     }
 
     /* Global variables */
@@ -3126,7 +3196,6 @@ get_user_var_name(expand_T *xp, int idx)
 	return cat_prefix_varname('w', hi->hi_key);
     }
 
-#ifdef FEAT_WINDOWS
     /* t: variables */
     ht = &curtab->tp_vars->dv_hashtab;
     if (tdone < ht->ht_used)
@@ -3139,7 +3208,6 @@ get_user_var_name(expand_T *xp, int idx)
 	    ++hi;
 	return cat_prefix_varname('t', hi->hi_key);
     }
-#endif
 
     /* v: variables */
     if (vidx < VV_LEN)
@@ -5234,9 +5302,7 @@ garbage_collect(int testing)
     win_T	*wp;
     int		i;
     int		did_free = FALSE;
-#ifdef FEAT_WINDOWS
     tabpage_T	*tp;
-#endif
 
     if (!testing)
     {
@@ -5279,13 +5345,10 @@ garbage_collect(int testing)
 								  NULL, NULL);
 #endif
 
-#ifdef FEAT_WINDOWS
     /* tabpage-local variables */
     FOR_ALL_TABPAGES(tp)
 	abort = abort || set_ref_in_item(&tp->tp_winvar.di_tv, copyID,
 								  NULL, NULL);
-#endif
-
     /* global variables */
     abort = abort || set_ref_in_ht(&globvarht, copyID, NULL);
 
@@ -5327,6 +5390,10 @@ garbage_collect(int testing)
 
 #ifdef FEAT_QUICKFIX
     abort = abort || set_ref_in_quickfix(copyID);
+#endif
+
+#ifdef FEAT_TERMINAL
+    abort = abort || set_ref_in_term(copyID);
 #endif
 
     if (!abort)
@@ -5679,9 +5746,9 @@ get_var_special_name(int nr)
  * If the memory is allocated "tofree" is set to it, otherwise NULL.
  * "numbuf" is used for a number.
  * When "copyID" is not NULL replace recursive lists and dicts with "...".
- * When both "echo_style" and "dict_val" are FALSE, put quotes around stings as
- * "string()", otherwise does not put quotes around strings, as ":echo"
- * displays values.
+ * When both "echo_style" and "composite_val" are FALSE, put quotes around
+ * stings as "string()", otherwise does not put quotes around strings, as
+ * ":echo" displays values.
  * When "restore_copyID" is FALSE, repeated items in dictionaries and lists
  * are replaced with "...".
  * May return NULL.
@@ -5694,7 +5761,7 @@ echo_string_core(
     int		copyID,
     int		echo_style,
     int		restore_copyID,
-    int		dict_val)
+    int		composite_val)
 {
     static int	recurse = 0;
     char_u	*r = NULL;
@@ -5717,10 +5784,12 @@ echo_string_core(
     switch (tv->v_type)
     {
 	case VAR_STRING:
-	    if (echo_style && !dict_val)
+	    if (echo_style && !composite_val)
 	    {
 		*tofree = NULL;
-		r = get_tv_string_buf(tv, numbuf);
+		r = tv->vval.v_string;
+		if (r == NULL)
+		    r = (char_u *)"";
 	    }
 	    else
 	    {
@@ -5837,10 +5906,19 @@ echo_string_core(
 
 	case VAR_NUMBER:
 	case VAR_UNKNOWN:
+	    *tofree = NULL;
+	    r = get_tv_string_buf(tv, numbuf);
+	    break;
+
 	case VAR_JOB:
 	case VAR_CHANNEL:
 	    *tofree = NULL;
 	    r = get_tv_string_buf(tv, numbuf);
+	    if (composite_val)
+	    {
+		*tofree = string_quote(r, FALSE);
+		r = *tofree;
+	    }
 	    break;
 
 	case VAR_FLOAT:
@@ -6537,6 +6615,8 @@ get_vim_var_nr(int idx)
 
 /*
  * Get string v: variable value.  Uses a static buffer, can only be used once.
+ * If the String variable has never been set, return an empty string.
+ * Never returns NULL;
  */
     char_u *
 get_vim_var_str(int idx)
@@ -6552,6 +6632,16 @@ get_vim_var_str(int idx)
 get_vim_var_list(int idx)
 {
     return vimvars[idx].vv_list;
+}
+
+/*
+ * Get Dict v: variable value.  Caller must take care of reference count when
+ * needed.
+ */
+    dict_T *
+get_vim_var_dict(int idx)
+{
+    return vimvars[idx].vv_dict;
 }
 
 /*
@@ -6628,25 +6718,13 @@ set_vim_var_list(int idx, list_T *val)
     void
 set_vim_var_dict(int idx, dict_T *val)
 {
-    int		todo;
-    hashitem_T	*hi;
-
     clear_tv(&vimvars[idx].vv_di.di_tv);
     vimvars[idx].vv_type = VAR_DICT;
     vimvars[idx].vv_dict = val;
     if (val != NULL)
     {
 	++val->dv_refcount;
-
-	/* Set readonly */
-	todo = (int)val->dv_hashtab.ht_used;
-	for (hi = val->dv_hashtab.ht_array; todo > 0 ; ++hi)
-	{
-	    if (HASHITEM_EMPTY(hi))
-		continue;
-	    --todo;
-	    HI2DI(hi)->di_flags |= DI_FLAGS_RO | DI_FLAGS_FIX;
-	}
+	dict_set_items_ro(val);
     }
 }
 
@@ -6991,7 +7069,7 @@ free_tv(typval_T *varp)
 	{
 	    case VAR_FUNC:
 		func_unref(varp->vval.v_string);
-		/*FALLTHROUGH*/
+		/* FALLTHROUGH */
 	    case VAR_STRING:
 		vim_free(varp->vval.v_string);
 		break;
@@ -7036,7 +7114,7 @@ clear_tv(typval_T *varp)
 	{
 	    case VAR_FUNC:
 		func_unref(varp->vval.v_string);
-		/*FALLTHROUGH*/
+		/* FALLTHROUGH */
 	    case VAR_STRING:
 		vim_free(varp->vval.v_string);
 		varp->vval.v_string = NULL;
@@ -7370,9 +7448,7 @@ find_var_in_ht(
 	    case 'v': return &vimvars_var;
 	    case 'b': return &curbuf->b_bufvar;
 	    case 'w': return &curwin->w_winvar;
-#ifdef FEAT_WINDOWS
 	    case 't': return &curtab->tp_winvar;
-#endif
 	    case 'l': return get_funccal_local_var();
 	    case 'a': return get_funccal_args_var();
 	}
@@ -7442,10 +7518,8 @@ find_var_ht(char_u *name, char_u **varname)
 	return &curbuf->b_vars->dv_hashtab;
     if (*name == 'w')				/* window variable */
 	return &curwin->w_vars->dv_hashtab;
-#ifdef FEAT_WINDOWS
     if (*name == 't')				/* tab page variable */
 	return &curtab->tp_vars->dv_hashtab;
-#endif
     if (*name == 'v')				/* v: variable */
 	return &vimvarht;
     if (*name == 'a')				/* a: function argument */
@@ -8066,8 +8140,9 @@ get_user_input(
     rettv->vval.v_string = NULL;
 
 #ifdef NO_CONSOLE_INPUT
-    /* While starting up, there is no place to enter text. */
-    if (no_console_input())
+    /* While starting up, there is no place to enter text. When running tests
+     * with --not-a-term we assume feedkeys() will be used. */
+    if (no_console_input() && !is_not_a_term())
 	return;
 #endif
 
@@ -8255,13 +8330,7 @@ ex_echo(exarg_T *eap)
     void
 ex_echohl(exarg_T *eap)
 {
-    int		id;
-
-    id = syn_name2id(eap->arg);
-    if (id == 0)
-	echo_attr = 0;
-    else
-	echo_attr = syn_id2attr(id);
+    echo_attr = syn_name2attr(eap->arg);
 }
 
 /*
@@ -8366,14 +8435,11 @@ find_win_by_nr(
     typval_T	*vp,
     tabpage_T	*tp UNUSED)	/* NULL for current tab page */
 {
-#ifdef FEAT_WINDOWS
     win_T	*wp;
-#endif
     int		nr;
 
     nr = (int)get_tv_number_chk(vp, NULL);
 
-#ifdef FEAT_WINDOWS
     if (nr < 0)
 	return NULL;
     if (nr == 0)
@@ -8392,11 +8458,6 @@ find_win_by_nr(
     if (nr >= LOWEST_WIN_ID)
 	return NULL;
     return wp;
-#else
-    if (nr == 0 || nr == 1 || nr == curwin->w_id)
-	return curwin;
-    return NULL;
-#endif
 }
 
 /*
@@ -8445,18 +8506,14 @@ getwinvar(
     dictitem_T	*v;
     tabpage_T	*tp = NULL;
     int		done = FALSE;
-#ifdef FEAT_WINDOWS
     win_T	*oldcurwin;
     tabpage_T	*oldtabpage;
     int		need_switch_win;
-#endif
 
-#ifdef FEAT_WINDOWS
     if (off == 1)
 	tp = find_tabpage((int)get_tv_number_chk(&argvars[0], NULL));
     else
 	tp = curtab;
-#endif
     win = find_win_by_nr(&argvars[off], tp);
     varname = get_tv_string_chk(&argvars[off + 1]);
     ++emsg_off;
@@ -8466,14 +8523,12 @@ getwinvar(
 
     if (win != NULL && varname != NULL)
     {
-#ifdef FEAT_WINDOWS
 	/* Set curwin to be our win, temporarily.  Also set the tabpage,
 	 * otherwise the window is not valid. Only do this when needed,
 	 * autocommands get blocked. */
 	need_switch_win = !(tp == curtab && win == curwin);
 	if (!need_switch_win
 		  || switch_win(&oldcurwin, &oldtabpage, win, tp, TRUE) == OK)
-#endif
 	{
 	    if (*varname == '&')
 	    {
@@ -8506,11 +8561,9 @@ getwinvar(
 	    }
 	}
 
-#ifdef FEAT_WINDOWS
 	if (need_switch_win)
 	    /* restore previous notion of curwin */
 	    restore_win(oldcurwin, oldtabpage, TRUE);
-#endif
     }
 
     if (!done && argvars[off + 2].v_type != VAR_UNKNOWN)
@@ -8527,11 +8580,9 @@ getwinvar(
 setwinvar(typval_T *argvars, typval_T *rettv UNUSED, int off)
 {
     win_T	*win;
-#ifdef FEAT_WINDOWS
     win_T	*save_curwin;
     tabpage_T	*save_curtab;
     int		need_switch_win;
-#endif
     char_u	*varname, *winvarname;
     typval_T	*varp;
     char_u	nbuf[NUMBUFLEN];
@@ -8540,23 +8591,19 @@ setwinvar(typval_T *argvars, typval_T *rettv UNUSED, int off)
     if (check_restricted() || check_secure())
 	return;
 
-#ifdef FEAT_WINDOWS
     if (off == 1)
 	tp = find_tabpage((int)get_tv_number_chk(&argvars[0], NULL));
     else
 	tp = curtab;
-#endif
     win = find_win_by_nr(&argvars[off], tp);
     varname = get_tv_string_chk(&argvars[off + 1]);
     varp = &argvars[off + 2];
 
     if (win != NULL && varname != NULL && varp != NULL)
     {
-#ifdef FEAT_WINDOWS
 	need_switch_win = !(tp == curtab && win == curwin);
 	if (!need_switch_win
 	       || switch_win(&save_curwin, &save_curtab, win, tp, TRUE) == OK)
-#endif
 	{
 	    if (*varname == '&')
 	    {
@@ -8582,10 +8629,8 @@ setwinvar(typval_T *argvars, typval_T *rettv UNUSED, int off)
 		}
 	    }
 	}
-#ifdef FEAT_WINDOWS
 	if (need_switch_win)
 	    restore_win(save_curwin, save_curtab, TRUE);
-#endif
     }
 }
 
@@ -10000,44 +10045,13 @@ filter_map_one(typval_T *tv, typval_T *expr, int map, int *remp)
 {
     typval_T	rettv;
     typval_T	argv[3];
-    char_u	buf[NUMBUFLEN];
-    char_u	*s;
     int		retval = FAIL;
-    int		dummy;
 
     copy_tv(tv, &vimvars[VV_VAL].vv_tv);
     argv[0] = vimvars[VV_KEY].vv_tv;
     argv[1] = vimvars[VV_VAL].vv_tv;
-    if (expr->v_type == VAR_FUNC)
-    {
-	s = expr->vval.v_string;
-	if (call_func(s, (int)STRLEN(s), &rettv, 2, argv, NULL,
-				     0L, 0L, &dummy, TRUE, NULL, NULL) == FAIL)
-	    goto theend;
-    }
-    else if (expr->v_type == VAR_PARTIAL)
-    {
-	partial_T   *partial = expr->vval.v_partial;
-
-	s = partial_name(partial);
-	if (call_func(s, (int)STRLEN(s), &rettv, 2, argv, NULL,
-				  0L, 0L, &dummy, TRUE, partial, NULL) == FAIL)
-	    goto theend;
-    }
-    else
-    {
-	s = get_tv_string_buf_chk(expr, buf);
-	if (s == NULL)
-	    goto theend;
-	s = skipwhite(s);
-	if (eval1(&s, &rettv, TRUE) == FAIL)
-	    goto theend;
-	if (*s != NUL)  /* check for trailing chars after expr */
-	{
-	    EMSG2(_(e_invexpr2), s);
-	    goto theend;
-	}
-    }
+    if (eval_expr_typval(expr, argv, 2, &rettv) == FAIL)
+	goto theend;
     if (map)
     {
 	/* map(): replace the list item value */

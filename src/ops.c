@@ -396,7 +396,10 @@ shift_block(oparg_T *oap, int amount)
 	return;
 
     /* total is number of screen columns to be inserted/removed */
-    total = amount * p_sw;
+    total = (int)((unsigned)amount * (unsigned)p_sw);
+    if ((total / p_sw) != amount)
+	return; /* multiplication overflow */
+
     oldp = ml_get_curline();
 
     if (!left)
@@ -1642,6 +1645,65 @@ shift_delete_registers()
     y_regs[1].y_array = NULL;		/* set register one to empty */
 }
 
+#ifdef FEAT_AUTOCMD
+    static void
+yank_do_autocmd(oparg_T *oap, yankreg_T *reg)
+{
+    static int	recursive = FALSE;
+    dict_T	*v_event;
+    list_T	*list;
+    int		n;
+    char_u	buf[NUMBUFLEN + 2];
+    long	reglen = 0;
+
+    if (recursive)
+	return;
+
+    v_event = get_vim_var_dict(VV_EVENT);
+
+    list = list_alloc();
+    for (n = 0; n < reg->y_size; n++)
+	list_append_string(list, reg->y_array[n], -1);
+    list->lv_lock = VAR_FIXED;
+    dict_add_list(v_event, "regcontents", list);
+
+    buf[0] = (char_u)oap->regname;
+    buf[1] = NUL;
+    dict_add_nr_str(v_event, "regname", 0, buf);
+
+    buf[0] = get_op_char(oap->op_type);
+    buf[1] = get_extra_op_char(oap->op_type);
+    buf[2] = NUL;
+    dict_add_nr_str(v_event, "operator", 0, buf);
+
+    buf[0] = NUL;
+    buf[1] = NUL;
+    switch (get_reg_type(oap->regname, &reglen))
+    {
+	case MLINE: buf[0] = 'V'; break;
+	case MCHAR: buf[0] = 'v'; break;
+	case MBLOCK:
+		vim_snprintf((char *)buf, sizeof(buf), "%c%ld", Ctrl_V,
+			     reglen + 1);
+		break;
+    }
+    dict_add_nr_str(v_event, "regtype", 0, buf);
+
+    /* Lock the dictionary and its keys */
+    dict_set_items_ro(v_event);
+
+    recursive = TRUE;
+    textlock++;
+    apply_autocmds(EVENT_TEXTYANKPOST, NULL, NULL, FALSE, curbuf);
+    textlock--;
+    recursive = FALSE;
+
+    /* Empty the dictionary, v:event is still valid */
+    dict_free_contents(v_event);
+    hash_init(&v_event->dv_hashtab);
+}
+#endif
+
 /*
  * Handle a delete operation.
  *
@@ -1795,6 +1857,11 @@ op_delete(oparg_T *oap)
 		return FAIL;
 	    }
 	}
+
+#ifdef FEAT_AUTOCMD
+	if (did_yank && has_textyankpost())
+	    yank_do_autocmd(oap, y_current);
+#endif
     }
 
     /*
@@ -2504,6 +2571,7 @@ op_insert(oparg_T *oap, long count1)
 {
     long		ins_len, pre_textlen = 0;
     char_u		*firstline, *ins_text;
+    colnr_T		ind_pre = 0, ind_post;
     struct block_def	bd;
     int			i;
     pos_T		t1;
@@ -2538,7 +2606,10 @@ op_insert(oparg_T *oap, long count1)
 #endif
 	/* Get the info about the block before entering the text */
 	block_prep(oap, &bd, oap->start.lnum, TRUE);
+	/* Get indent information */
+	ind_pre = (colnr_T)getwhitecols_curline();
 	firstline = ml_get(oap->start.lnum) + bd.textcol;
+
 	if (oap->op_type == OP_APPEND)
 	    firstline += bd.textlen;
 	pre_textlen = (long)STRLEN(firstline);
@@ -2599,6 +2670,15 @@ op_insert(oparg_T *oap, long count1)
     if (oap->block_mode)
     {
 	struct block_def	bd2;
+
+	/* If indent kicked in, the firstline might have changed
+	 * but only do that, if the indent actually increased. */
+	ind_post = (colnr_T)getwhitecols_curline();
+	if (curbuf->b_op_start.col > ind_pre && ind_post > ind_pre)
+	{
+	    bd.textcol += ind_post - ind_pre;
+	    bd.start_vcol += ind_post - ind_pre;
+	}
 
 	/* The user may have moved the cursor before inserting something, try
 	 * to adjust the block for that. */
@@ -2751,7 +2831,7 @@ op_change(oparg_T *oap)
 # endif
 	firstline = ml_get(oap->start.lnum);
 	pre_textlen = (long)STRLEN(firstline);
-	pre_indent = (long)(skipwhite(firstline) - firstline);
+	pre_indent = (long)getwhitecols(firstline);
 	bd.textcol = curwin->w_cursor.col;
     }
 #endif
@@ -2776,7 +2856,7 @@ op_change(oparg_T *oap)
 	firstline = ml_get(oap->start.lnum);
 	if (bd.textcol > (colnr_T)pre_indent)
 	{
-	    long new_indent = (long)(skipwhite(firstline) - firstline);
+	    long new_indent = (long)getwhitecols(firstline);
 
 	    pre_textlen += new_indent - pre_indent;
 	    bd.textcol += new_indent - pre_indent;
@@ -3167,19 +3247,29 @@ op_yank(oparg_T *oap, int deleting, int mess)
 	/* Some versions of Vi use ">=" here, some don't...  */
 	if (yanklines > p_report)
 	{
+	    char namebuf[100];
+
+	    if (oap->regname == NUL)
+		*namebuf = NUL;
+	    else
+		vim_snprintf(namebuf, sizeof(namebuf),
+						_(" into \"%c"), oap->regname);
+
 	    /* redisplay now, so message is not deleted */
 	    update_topline_redraw();
 	    if (yanklines == 1)
 	    {
 		if (oap->block_mode)
-		    MSG(_("block of 1 line yanked"));
+		    smsg((char_u *)_("block of 1 line yanked%s"), namebuf);
 		else
-		    MSG(_("1 line yanked"));
+		    smsg((char_u *)_("1 line yanked%s"), namebuf);
 	    }
 	    else if (oap->block_mode)
-		smsg((char_u *)_("block of %ld lines yanked"), yanklines);
+		smsg((char_u *)_("block of %ld lines yanked%s"),
+		     yanklines, namebuf);
 	    else
-		smsg((char_u *)_("%ld lines yanked"), yanklines);
+		smsg((char_u *)_("%ld lines yanked%s"), yanklines,
+		     namebuf);
 	}
     }
 
@@ -3233,8 +3323,8 @@ op_yank(oparg_T *oap, int deleting, int mess)
 
 	clip_own_selection(&clip_plus);
 	clip_gen_set_selection(&clip_plus);
-	if (!clip_isautosel_star() && !did_star
-					  && curr == &(y_regs[PLUS_REGISTER]))
+	if (!clip_isautosel_star() && !clip_isautosel_plus()
+		&& !did_star && curr == &(y_regs[PLUS_REGISTER]))
 	{
 	    copy_yank_reg(&(y_regs[STAR_REGISTER]));
 	    clip_own_selection(&clip_star);
@@ -3242,6 +3332,11 @@ op_yank(oparg_T *oap, int deleting, int mess)
 	}
     }
 # endif
+#endif
+
+#ifdef FEAT_AUTOCMD
+    if (!deleting && has_textyankpost())
+	yank_do_autocmd(oap, y_current);
 #endif
 
     return OK;
@@ -5052,8 +5147,7 @@ format_lines(
 #endif
 		    if (second_indent > 0)  /* the "leader" for FO_Q_SECOND */
 		{
-		    char_u *p = ml_get_curline();
-		    int indent = (int)(skipwhite(p) - p);
+		    int indent = getwhitecols_curline();
 
 		    if (indent > 0)
 		    {
@@ -5408,7 +5502,7 @@ op_addsub(
 	    }
 	    else /* oap->motion_type == MCHAR */
 	    {
-		if (!oap->inclusive)
+		if (pos.lnum == oap->start.lnum && !oap->inclusive)
 		    dec(&(oap->end));
 		length = (colnr_T)STRLEN(ml_get(pos.lnum));
 		pos.col = 0;

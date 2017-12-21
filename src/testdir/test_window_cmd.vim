@@ -362,6 +362,19 @@ func Test_equalalways_on_close()
   set equalalways&
 endfunc
 
+func Test_win_screenpos()
+  call assert_equal(1, winnr('$'))
+  split
+  vsplit
+  10wincmd _
+  30wincmd |
+  call assert_equal([1, 1], win_screenpos(1))
+  call assert_equal([1, 32], win_screenpos(2))
+  call assert_equal([12, 1], win_screenpos(3))
+  call assert_equal([0, 0], win_screenpos(4))
+  only
+endfunc
+
 func Test_window_jump_tag()
   help
   /iccf
@@ -414,6 +427,44 @@ func Test_next_split_all()
   s/x
   all
   bwipe!
+endfunc
+
+" Tests for adjusting window and contents
+func GetScreenStr(row)
+   let str = ""
+   for c in range(1,3)
+       let str .= nr2char(screenchar(a:row, c))
+   endfor
+   return str
+endfunc
+
+func Test_window_contents()
+  enew! | only | new
+  call setline(1, range(1,256))
+
+  exe "norm! \<C-W>t\<C-W>=1Gzt\<C-W>w\<C-W>+"
+  redraw
+  let s3=GetScreenStr(1)
+  wincmd p
+  call assert_equal(1, line("w0"))
+  call assert_equal('1  ', s3)
+
+  exe "norm! \<C-W>t\<C-W>=50Gzt\<C-W>w\<C-W>+"
+  redraw
+  let s3=GetScreenStr(1)
+  wincmd p
+  call assert_equal(50, line("w0"))
+  call assert_equal('50 ', s3)
+
+  exe "norm! \<C-W>t\<C-W>=59Gzt\<C-W>w\<C-W>+"
+  redraw
+  let s3=GetScreenStr(1)
+  wincmd p
+  call assert_equal(59, line("w0"))
+  call assert_equal('59 ', s3)
+
+  bwipeout!
+  call test_garbagecollect_now()
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab
