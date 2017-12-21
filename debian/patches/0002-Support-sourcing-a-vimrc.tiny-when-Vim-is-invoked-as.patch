@@ -1,0 +1,71 @@
+From 2d0b73fbf87f76334070fe0e3224aff8ddfe12a3 Mon Sep 17 00:00:00 2001
+From: James McCoy <jamessan@debian.org>
+Date: Tue, 6 Oct 2015 23:46:30 -0400
+Subject: [PATCH 2/6] Support sourcing a vimrc.tiny when Vim is invoked as vi
+
+This is used only in the vim-tiny package to allow a specific
+configuration for vim-tiny's vi.  The vim-tiny package is substantially
+different from other Vim packages, so it does not make sense to
+share the same config.
+
+Closes: #222138
+Signed-off-by: Stefano Zacchiroli <zack@debian.org>
+Signed-off-by: James Vega <jamessan@debian.org>
+---
+ src/main.c    | 14 +++++++++++++-
+ src/os_unix.h |  3 +++
+ 2 files changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/src/main.c b/src/main.c
+index 91ef66d..bfdf562 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -81,6 +81,9 @@ typedef struct
+ #ifdef FEAT_DIFF
+     int		diff_mode;		/* start with 'diff' set */
+ #endif
++#ifdef SYS_TINYRC_FILE
++    int		vi_mode;		/* started as "vi" */
++#endif
+ } mparm_T;
+ 
+ /* Values for edit_type. */
+@@ -1677,6 +1680,10 @@ parse_command_name(mparm_T *parmp)
+     }
+     else if (STRNICMP(initstr, "vim", 3) == 0)
+ 	initstr += 3;
++#ifdef SYS_TINYRC_FILE
++    else if (STRNICMP(initstr, "vi", 2) == 0)
++	parmp->vi_mode = TRUE;
++#endif
+ 
+     /* Catch "[r][g]vimdiff" and "[r][g]viewdiff". */
+     if (STRICMP(initstr, "diff") == 0)
+@@ -3003,7 +3010,12 @@ source_startup_scripts(mparm_T *parmp)
+ 	 * Get system wide defaults, if the file name is defined.
+ 	 */
+ #ifdef SYS_VIMRC_FILE
+-	(void)do_source((char_u *)SYS_VIMRC_FILE, FALSE, DOSO_NONE);
++# if defined(SYS_TINYRC_FILE) && defined(TINY_VIMRC)
++	if (parmp->vi_mode)
++	    (void)do_source((char_u *)SYS_TINYRC_FILE, FALSE, DOSO_NONE);
++	else
++# endif
++	    (void)do_source((char_u *)SYS_VIMRC_FILE, FALSE, DOSO_NONE);
+ #endif
+ #ifdef MACOS_X
+ 	(void)do_source((char_u *)"$VIMRUNTIME/macmap.vim", FALSE, DOSO_NONE);
+diff --git a/src/os_unix.h b/src/os_unix.h
+index 73881af..075cc96 100644
+--- a/src/os_unix.h
++++ b/src/os_unix.h
+@@ -221,6 +221,9 @@ typedef struct dsc$descriptor   DESC;
+ /*
+  * Unix system-dependent file names
+  */
++#ifndef SYS_TINYRC_FILE
++# define SYS_TINYRC_FILE "$VIM/vimrc.tiny"
++#endif
+ #ifndef SYS_VIMRC_FILE
+ # define SYS_VIMRC_FILE "$VIM/vimrc"
+ #endif

@@ -1,0 +1,11 @@
+# exported from git by git-debcherry
+0001-Detect-the-rst-filetype-using-the-contents-of-the-fi.patch
+0002-Support-sourcing-a-vimrc.tiny-when-Vim-is-invoked-as.patch
+0003-Add-recognition-of-more-LaTeX-commands-for-tex-filet.patch
+0004-Document-Debian-s-decision-to-disable-modelines-by-d.patch
+0005-Support-defining-compilation-date-in-SOURCE_DATE_EPO.patch
+0006-debsources.vim-Move-trusty-to-unsupported.patch
+ubuntu-grub-syntax.patch
+update-upstart-syntax.patch
+ubuntu-releases.patch
+CVE-2016-1248.patch

@@ -1,0 +1,41 @@
+From ef1e28dc2dcb10723f4c6e372c0b84cf685a0312 Mon Sep 17 00:00:00 2001
+From: James McCoy <jamessan@debian.org>
+Date: Fri, 1 Apr 2016 20:37:58 -0400
+Subject: [PATCH 6/6] debsources.vim: Move trusty to unsupported
+
+Signed-off-by: James McCoy <jamessan@debian.org>
+---
+ runtime/syntax/debsources.vim | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/runtime/syntax/debsources.vim b/runtime/syntax/debsources.vim
+index e0c5f40..37e5d8f 100644
+--- a/runtime/syntax/debsources.vim
++++ b/runtime/syntax/debsources.vim
+@@ -2,7 +2,7 @@
+ " Language:     Debian sources.list
+ " Maintainer:   Debian Vim Maintainers <pkg-vim-maintainers@lists.alioth.debian.org>
+ " Former Maintainer: Matthijs Mohlmann <matthijs@cacholong.nl>
+-" Last Change: 2015 Oct 24
++" Last Change: 2016 Apr 01
+ " URL: https://anonscm.debian.org/cgit/pkg-vim/vim.git/plain/runtime/syntax/debsources.vim
+ 
+ " Standard syntax initialization
+@@ -27,7 +27,7 @@ let s:supported = [
+       \ 'oldstable', 'stable', 'testing', 'unstable', 'experimental',
+       \ 'squeeze', 'wheezy', 'jessie', 'stretch', 'sid', 'rc-buggy',
+       \
+-      \ 'precise', 'trusty', 'vivid', 'wily', 'xenial', 'devel'
++      \ 'precise', 'vivid', 'wily', 'xenial', 'devel'
+       \ ]
+ let s:unsupported = [
+       \ 'buzz', 'rex', 'bo', 'hamm', 'slink', 'potato',
+@@ -36,7 +36,7 @@ let s:unsupported = [
+       \ 'warty', 'hoary', 'breezy', 'dapper', 'edgy', 'feisty',
+       \ 'gutsy', 'hardy', 'intrepid', 'jaunty', 'karmic', 'lucid',
+       \ 'maverick', 'natty', 'oneiric', 'quantal', 'raring', 'saucy',
+-      \ 'utopic'
++      \ 'trusty', 'utopic'
+       \ ]
+ let &cpo=s:cpo
+ 

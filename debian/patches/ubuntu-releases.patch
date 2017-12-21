@@ -1,0 +1,16 @@
+Description: Add support for xenial, and drop support for utopic
+Author: Adam Conrad <adconrad@ubuntu.com>
+
+Index: b/runtime/syntax/debsources.vim
+===================================================================
+--- a/runtime/syntax/debsources.vim
++++ b/runtime/syntax/debsources.vim
+@@ -36,7 +36,7 @@ let s:unsupported = [
+       \ 'warty', 'hoary', 'breezy', 'dapper', 'edgy', 'feisty',
+       \ 'gutsy', 'hardy', 'intrepid', 'jaunty', 'karmic', 'lucid',
+       \ 'maverick', 'natty', 'oneiric', 'quantal', 'raring', 'saucy',
+-      \ 'trusty', 'utopic'
++      \ 'utopic', 'vivid'
+       \ ]
+ let &cpo=s:cpo
+ 
