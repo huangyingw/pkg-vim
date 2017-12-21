@@ -56,4 +56,4 @@ func Test_backspace_option()
   set nocompatible viminfo+=nviminfo
 endfunc
 
-" vim: shiftwidth=2 sts=2 expandtab
+" vim: tabstop=2 shiftwidth=0 expandtab

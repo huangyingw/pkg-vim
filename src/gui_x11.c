@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4 noet:
+/* vi:set ts=8 sts=4 sw=4:
  *
  * VIM - Vi IMproved		by Bram Moolenaar
  *				GUI/Motif support by Robert Webb
@@ -12,14 +12,14 @@
  * Not used for GTK.
  */
 
-#include "vim.h"
-
 #include <X11/keysym.h>
 #include <X11/Xatom.h>
 #include <X11/StringDefs.h>
 #include <X11/Intrinsic.h>
 #include <X11/Shell.h>
 #include <X11/cursorfont.h>
+
+#include "vim.h"
 
 /*
  * For Workshop XpmP.h is preferred, because it makes the signs drawn with a
@@ -50,6 +50,10 @@
 # include <X11/Xmu/Editres.h>
 #endif
 
+#ifdef FEAT_BEVAL_TIP
+# include "gui_beval.h"
+#endif
+
 #define VIM_NAME	"vim"
 #define VIM_CLASS	"Vim"
 
@@ -67,16 +71,16 @@
 # define DFLT_MENU_FG_COLOR	"black"
 # define DFLT_SCROLL_BG_COLOR	"gray60"
 # define DFLT_SCROLL_FG_COLOR	"gray77"
-# define DFLT_TOOLTIP_BG_COLOR	"#ffff91"
-# define DFLT_TOOLTIP_FG_COLOR	"#000000"
+# define DFLT_TOOLTIP_BG_COLOR	"#ffffffff9191"
+# define DFLT_TOOLTIP_FG_COLOR	"#000000000000"
 #else
 /* use the default (CDE) colors */
 # define DFLT_MENU_BG_COLOR	""
 # define DFLT_MENU_FG_COLOR	""
 # define DFLT_SCROLL_BG_COLOR	""
 # define DFLT_SCROLL_FG_COLOR	""
-# define DFLT_TOOLTIP_BG_COLOR	"#ffff91"
-# define DFLT_TOOLTIP_FG_COLOR	"#000000"
+# define DFLT_TOOLTIP_BG_COLOR	"#ffffffff9191"
+# define DFLT_TOOLTIP_FG_COLOR	"#000000000000"
 #endif
 
 Widget vimShell = (Widget)0;
@@ -132,11 +136,21 @@ static guicolor_T	prev_sp_color = INVALCOLOR;
 static XButtonPressedEvent last_mouse_event;
 #endif
 
+static int find_closest_color(Colormap colormap, XColor *colorPtr);
+static void gui_x11_timer_cb(XtPointer timed_out, XtIntervalId *interval_id);
+static void gui_x11_visibility_cb(Widget w, XtPointer dud, XEvent *event, Boolean *dum);
+static void gui_x11_expose_cb(Widget w, XtPointer dud, XEvent *event, Boolean *dum);
+static void gui_x11_resize_window_cb(Widget w, XtPointer dud, XEvent *event, Boolean *dum);
+static void gui_x11_focus_change_cb(Widget w, XtPointer data, XEvent *event, Boolean *dum);
+static void gui_x11_enter_cb(Widget w, XtPointer data, XEvent *event, Boolean *dum);
+static void gui_x11_leave_cb(Widget w, XtPointer data, XEvent *event, Boolean *dum);
+static void gui_x11_mouse_cb(Widget w, XtPointer data, XEvent *event, Boolean *dum);
 static void gui_x11_check_copy_area(void);
 #ifdef FEAT_CLIENTSERVER
 static void gui_x11_send_event_handler(Widget, XtPointer, XEvent *, Boolean *);
 #endif
 static void gui_x11_wm_protocol_handler(Widget, XtPointer, XEvent *, Boolean *);
+static void gui_x11_blink_cb(XtPointer timed_out, XtIntervalId *interval_id);
 static Cursor gui_x11_create_blank_mouse(void);
 static void draw_curl(int row, int col, int cells);
 
@@ -442,7 +456,7 @@ static XtResource vim_resources[] =
 	XtRString,
 	DFLT_SCROLL_BG_COLOR
     },
-#ifdef FEAT_BEVAL_GUI
+#ifdef FEAT_BEVAL
     {
 	XtNtooltipForeground,
 	XtCTooltipForeground,
@@ -480,7 +494,7 @@ static XtResource vim_resources[] =
 	XtRImmediate,
 	(XtPointer)NOFONTSET
     },
-#endif /* FEAT_BEVAL_GUI */
+#endif /* FEAT_BEVAL */
 #ifdef FEAT_XIM
     {
 	"preeditType",
@@ -560,25 +574,6 @@ gui_x11_timer_cb(
 {
     *((int *)timed_out) = TRUE;
 }
-
-#ifdef FEAT_JOB_CHANNEL
-    static void
-channel_poll_cb(
-    XtPointer	    client_data,
-    XtIntervalId    *interval_id UNUSED)
-{
-    XtIntervalId    *channel_timer = (XtIntervalId *)client_data;
-
-    /* Using an event handler for a channel that may be disconnected does
-     * not work, it hangs.  Instead poll for messages. */
-    channel_handle_events(TRUE);
-    parse_queued_messages();
-
-    /* repeat */
-    *channel_timer = XtAppAddTimeOut(app_context, (long_u)20,
-						 channel_poll_cb, client_data);
-}
-#endif
 
     static void
 gui_x11_visibility_cb(
@@ -1351,7 +1346,7 @@ gui_mch_init(void)
     gui.menu_bg_pixel = gui_get_color((char_u *)gui.rsrc_menu_bg_name);
     gui.scroll_fg_pixel = gui_get_color((char_u *)gui.rsrc_scroll_fg_name);
     gui.scroll_bg_pixel = gui_get_color((char_u *)gui.rsrc_scroll_bg_name);
-#ifdef FEAT_BEVAL_GUI
+#ifdef FEAT_BEVAL
     gui.tooltip_fg_pixel = gui_get_color((char_u *)gui.rsrc_tooltip_fg_name);
     gui.tooltip_bg_pixel = gui_get_color((char_u *)gui.rsrc_tooltip_bg_name);
 #endif
@@ -1540,7 +1535,7 @@ gui_mch_init(void)
 	workshop_connect(app_context);
 #endif
 
-#ifdef FEAT_BEVAL_GUI
+#ifdef FEAT_BEVAL
     gui_init_tooltip_font();
 #endif
 #ifdef FEAT_MENU
@@ -1681,7 +1676,7 @@ gui_mch_open(void)
     return OK;
 }
 
-#if defined(FEAT_BEVAL_GUI) || defined(PROTO)
+#if defined(FEAT_BEVAL) || defined(PROTO)
 /*
  * Convert the tooltip fontset name to an XFontSet.
  */
@@ -1998,40 +1993,14 @@ gui_mch_get_font(char_u *name, int giveErrorIfMissing)
 #if defined(FEAT_EVAL) || defined(PROTO)
 /*
  * Return the name of font "font" in allocated memory.
+ * Don't know how to get the actual name, thus use the provided name.
  */
     char_u *
-gui_mch_get_fontname(GuiFont font, char_u *name)
+gui_mch_get_fontname(GuiFont font UNUSED, char_u *name)
 {
-    char_u *ret = NULL;
-
-    if (name != NULL && font == NULL)
-    {
-	/* In this case, there's no way other than doing this. */
-	ret = vim_strsave(name);
-    }
-    else if (font != NULL)
-    {
-	/* In this case, try to retrieve the XLFD corresponding to 'font'->fid;
-	 * if failed, use 'name' unless it's NULL. */
-	unsigned long value = 0L;
-
-	if (XGetFontProperty(font, XA_FONT, &value))
-	{
-	    char *xa_font_name = NULL;
-
-	    xa_font_name = XGetAtomName(gui.dpy, value);
-	    if (xa_font_name != NULL)
-	    {
-		ret = vim_strsave((char_u *)xa_font_name);
-		XFree(xa_font_name);
-	    }
-	    else if (name != NULL)
-		ret = vim_strsave(name);
-	}
-	else if (name != NULL)
-	    ret = vim_strsave(name);
-    }
-    return ret;
+    if (name == NULL)
+	return NULL;
+    return vim_strsave(name);
 }
 #endif
 
@@ -2273,42 +2242,171 @@ fontset_ascent(XFontSet fs)
  * Return INVALCOLOR for error.
  */
     guicolor_T
-gui_mch_get_color(char_u *name)
+gui_mch_get_color(char_u *reqname)
 {
-    guicolor_T  requested;
+    int		i;
+    char_u	*name = reqname;
+    Colormap	colormap;
+    XColor      color;
+    static char *(vimnames[][2]) =
+    {
+	/* A number of colors that some X11 systems don't have */
+	{"LightRed",	"#FFBBBB"},
+	{"LightGreen",	"#88FF88"},
+	{"LightMagenta","#FFBBFF"},
+	{"DarkCyan",	"#008888"},
+	{"DarkBlue",	"#0000BB"},
+	{"DarkRed",	"#BB0000"},
+	{"DarkMagenta",	"#BB00BB"},
+	{"DarkGrey",	"#BBBBBB"},
+	{"DarkYellow",	"#BBBB00"},
+	{"Gray10",	"#1A1A1A"},
+	{"Grey10",	"#1A1A1A"},
+	{"Gray20",	"#333333"},
+	{"Grey20",	"#333333"},
+	{"Gray30",	"#4D4D4D"},
+	{"Grey30",	"#4D4D4D"},
+	{"Gray40",	"#666666"},
+	{"Grey40",	"#666666"},
+	{"Gray50",	"#7F7F7F"},
+	{"Grey50",	"#7F7F7F"},
+	{"Gray60",	"#999999"},
+	{"Grey60",	"#999999"},
+	{"Gray70",	"#B3B3B3"},
+	{"Grey70",	"#B3B3B3"},
+	{"Gray80",	"#CCCCCC"},
+	{"Grey80",	"#CCCCCC"},
+	{"Gray90",	"#E5E5E5"},
+	{"Grey90",	"#E5E5E5"},
+	{NULL, NULL}
+    };
 
     /* can't do this when GUI not running */
-    if (!gui.in_use || name == NULL || *name == NUL)
+    if (!gui.in_use || *reqname == NUL)
 	return INVALCOLOR;
 
-    requested = gui_get_color_cmn(name);
-    if (requested == INVALCOLOR)
-	return INVALCOLOR;
+    colormap = DefaultColormap(gui.dpy, XDefaultScreen(gui.dpy));
 
-    return gui_mch_get_rgb_color(
-	    (requested & 0xff0000) >> 16,
-	    (requested & 0xff00) >> 8,
-	    requested & 0xff);
+    /* Do this twice if the name isn't recognized. */
+    while (name != NULL)
+    {
+	i = XParseColor(gui.dpy, colormap, (char *)name, &color);
+
+#if defined(HAVE_LOCALE_H) || defined(X_LOCALE)
+	if (i == 0)
+	{
+	    char *old;
+
+	    /* The X11 system is trying to resolve named colors only by names
+	     * corresponding to the current locale language.  But Vim scripts
+	     * usually contain the English color names.  Therefore we have to
+	     * try a second time here with the native "C" locale set.
+	     * Hopefully, restoring the old locale this way works on all
+	     * systems...
+	     */
+	    old = setlocale(LC_ALL, NULL);
+	    if (old != NULL && STRCMP(old, "C") != 0)
+	    {
+		old = (char *)vim_strsave((char_u *)old);
+		setlocale(LC_ALL, "C");
+		i = XParseColor(gui.dpy, colormap, (char *)name, &color);
+		setlocale(LC_ALL, old);
+		vim_free(old);
+	    }
+	}
+#endif
+	if (i != 0 && (XAllocColor(gui.dpy, colormap, &color) != 0
+		    || find_closest_color(colormap, &color) == OK))
+	    return (guicolor_T)color.pixel;
+
+	/* check for a few builtin names */
+	for (i = 0; ; ++i)
+	{
+	    if (vimnames[i][0] == NULL)
+	    {
+		name = NULL;
+		break;
+	    }
+	    if (STRICMP(name, vimnames[i][0]) == 0)
+	    {
+		name = (char_u *)vimnames[i][1];
+		break;
+	    }
+	}
+    }
+
+    return INVALCOLOR;
 }
 
 /*
- * Return the Pixel value (color) for the given RGB values.
- * Return INVALCOLOR for error.
+ * Find closest color for "colorPtr" in "colormap".  set "colorPtr" to the
+ * resulting color.
+ * Based on a similar function in TCL.
+ * Return FAIL if not able to find or allocate a color.
  */
-    guicolor_T
-gui_mch_get_rgb_color(int r, int g, int b)
+    static int
+find_closest_color(Colormap colormap, XColor *colorPtr)
 {
-    char        spec[8]; /* space enough to hold "#RRGGBB" */
-    XColor      available;
-    Colormap	colormap;
+    double	tmp, distance, closestDistance;
+    int		i, closest, numFound, cmap_size;
+    XColor	*colortable;
+    XVisualInfo	template, *visInfoPtr;
 
-    vim_snprintf(spec, sizeof(spec), "#%.2x%.2x%.2x", r, g, b);
-    colormap = DefaultColormap(gui.dpy, DefaultScreen(gui.dpy));
-    if (XParseColor(gui.dpy, colormap, (char *)spec, &available) != 0
-	    && XAllocColor(gui.dpy, colormap, &available) != 0)
-	return (guicolor_T)available.pixel;
+    template.visualid = XVisualIDFromVisual(DefaultVisual(gui.dpy,
+						    XDefaultScreen(gui.dpy)));
+    visInfoPtr = XGetVisualInfo(gui.dpy, (long)VisualIDMask,
+							&template, &numFound);
+    if (numFound < 1)
+	/* FindClosestColor couldn't lookup visual */
+	return FAIL;
 
-    return INVALCOLOR;
+    cmap_size = visInfoPtr->colormap_size;
+    XFree((char *)visInfoPtr);
+    colortable = (XColor *)alloc((unsigned)(cmap_size * sizeof(XColor)));
+    if (!colortable)
+	return FAIL;  /* out of memory */
+
+    for (i = 0; i  < cmap_size; i++)
+	colortable[i].pixel = (unsigned long)i;
+    XQueryColors (gui.dpy, colormap, colortable, cmap_size);
+
+    /*
+     * Find the color that best approximates the desired one, then
+     * try to allocate that color.  If that fails, it must mean that
+     * the color was read-write (so we can't use it, since it's owner
+     * might change it) or else it was already freed.  Try again,
+     * over and over again, until something succeeds.
+     */
+    closestDistance = 1e30;
+    closest = 0;
+    for (i = 0; i < cmap_size; i++)
+    {
+	/*
+	 * Use Euclidean distance in RGB space, weighted by Y (of YIQ)
+	 * as the objective function;  this accounts for differences
+	 * in the color sensitivity of the eye.
+	 */
+	tmp = .30 * (((int)colorPtr->red) - (int)colortable[i].red);
+	distance = tmp * tmp;
+	tmp = .61 * (((int)colorPtr->green) - (int)colortable[i].green);
+	distance += tmp * tmp;
+	tmp = .11 * (((int)colorPtr->blue) - (int)colortable[i].blue);
+	distance += tmp * tmp;
+	if (distance < closestDistance)
+	{
+	    closest = i;
+	    closestDistance = distance;
+	}
+    }
+
+    if (XAllocColor(gui.dpy, colormap, &colortable[closest]) != 0)
+    {
+	gui.color_approx = TRUE;
+	*colorPtr = colortable[closest];
+    }
+
+    vim_free(colortable);
+    return OK;
 }
 
 /*
@@ -2538,16 +2636,6 @@ gui_mch_draw_string(
 		y, FILL_X(col + cells) - 1, y);
     }
 
-    if (flags & DRAW_STRIKE)
-    {
-	int	y = FILL_Y(row + 1) - gui.char_height/2;
-
-	XSetForeground(gui.dpy, gui.text_gc, prev_sp_color);
-	XDrawLine(gui.dpy, gui.wid, gui.text_gc, FILL_X(col),
-		y, FILL_X(col + cells) - 1, y);
-	XSetForeground(gui.dpy, gui.text_gc, prev_fg_color);
-    }
-
 #ifdef FEAT_XFONTSET
     if (current_fontset != NULL)
 	XSetClipMask(gui.dpy, gui.text_gc, None);
@@ -2704,8 +2792,7 @@ gui_mch_update(void)
     int
 gui_mch_wait_for_chars(long wtime)
 {
-    int	    focus;
-    int	    retval = FAIL;
+    int		    focus;
 
     /*
      * Make this static, in case gui_x11_timer_cb is called after leaving
@@ -2714,22 +2801,12 @@ gui_mch_wait_for_chars(long wtime)
     static int	    timed_out;
     XtIntervalId    timer = (XtIntervalId)0;
     XtInputMask	    desired;
-#ifdef FEAT_JOB_CHANNEL
-    XtIntervalId    channel_timer = (XtIntervalId)0;
-#endif
 
     timed_out = FALSE;
 
     if (wtime > 0)
 	timer = XtAppAddTimeOut(app_context, (long_u)wtime, gui_x11_timer_cb,
 								  &timed_out);
-#ifdef FEAT_JOB_CHANNEL
-    /* If there is a channel with the keep_open flag we need to poll for input
-     * on them. */
-    if (channel_any_keep_open())
-	channel_timer = XtAppAddTimeOut(app_context, (long_u)20,
-				   channel_poll_cb, (XtPointer)&channel_timer);
-#endif
 
     focus = gui.in_focus;
 #ifdef ALT_X_INPUT
@@ -2751,15 +2828,7 @@ gui_mch_wait_for_chars(long wtime)
 	}
 
 #ifdef MESSAGE_QUEUE
-# ifdef FEAT_TIMERS
-	did_add_timer = FALSE;
-# endif
 	parse_queued_messages();
-# ifdef FEAT_TIMERS
-	if (did_add_timer)
-	    /* Need to recompute the waiting time. */
-	    break;
-# endif
 #endif
 
 	/*
@@ -2774,19 +2843,12 @@ gui_mch_wait_for_chars(long wtime)
 
 	if (input_available())
 	{
-	    retval = OK;
-	    break;
+	    if (timer != (XtIntervalId)0 && !timed_out)
+		XtRemoveTimeOut(timer);
+	    return OK;
 	}
     }
-
-    if (timer != (XtIntervalId)0 && !timed_out)
-	XtRemoveTimeOut(timer);
-#ifdef FEAT_JOB_CHANNEL
-    if (channel_timer != (XtIntervalId)0)
-	XtRemoveTimeOut(channel_timer);
-#endif
-
-    return retval;
+    return FAIL;
 }
 
 /*
@@ -3081,18 +3143,6 @@ static long_u		blink_ontime = 400;
 static long_u		blink_offtime = 250;
 static XtIntervalId	blink_timer = (XtIntervalId)0;
 
-    int
-gui_mch_is_blinking(void)
-{
-    return blink_state != BLINK_NONE;
-}
-
-    int
-gui_mch_is_blink_off(void)
-{
-    return blink_state == BLINK_OFF;
-}
-
     void
 gui_mch_set_blinking(long waittime, long on, long off)
 {
@@ -3117,6 +3167,25 @@ gui_mch_stop_blink(void)
     blink_state = BLINK_NONE;
 }
 
+/*
+ * Start the cursor blinking.  If it was already blinking, this restarts the
+ * waiting time and shows the cursor.
+ */
+    void
+gui_mch_start_blink(void)
+{
+    if (blink_timer != (XtIntervalId)0)
+	XtRemoveTimeOut(blink_timer);
+    /* Only switch blinking on if none of the times is zero */
+    if (blink_waittime && blink_ontime && blink_offtime && gui.in_focus)
+    {
+	blink_timer = XtAppAddTimeOut(app_context, blink_waittime,
+						      gui_x11_blink_cb, NULL);
+	blink_state = BLINK_ON;
+	gui_update_cursor(TRUE, FALSE);
+    }
+}
+
     static void
 gui_x11_blink_cb(
     XtPointer	    timed_out UNUSED,
@@ -3139,28 +3208,9 @@ gui_x11_blink_cb(
 }
 
 /*
- * Start the cursor blinking.  If it was already blinking, this restarts the
- * waiting time and shows the cursor.
- */
-    void
-gui_mch_start_blink(void)
-{
-    if (blink_timer != (XtIntervalId)0)
-	XtRemoveTimeOut(blink_timer);
-    /* Only switch blinking on if none of the times is zero */
-    if (blink_waittime && blink_ontime && blink_offtime && gui.in_focus)
-    {
-	blink_timer = XtAppAddTimeOut(app_context, blink_waittime,
-						      gui_x11_blink_cb, NULL);
-	blink_state = BLINK_ON;
-	gui_update_cursor(TRUE, FALSE);
-    }
-}
-
-/*
  * Return the RGB value of a pixel as a long.
  */
-    guicolor_T
+    long_u
 gui_mch_get_rgb(guicolor_T pixel)
 {
     XColor	xc;
@@ -3170,8 +3220,8 @@ gui_mch_get_rgb(guicolor_T pixel)
     xc.pixel = pixel;
     XQueryColor(gui.dpy, colormap, &xc);
 
-    return (guicolor_T)(((xc.red & 0xff00) << 8) + (xc.green & 0xff00)
-						   + ((unsigned)xc.blue >> 8));
+    return ((xc.red & 0xff00) << 8) + (xc.green & 0xff00)
+						   + ((unsigned)xc.blue >> 8);
 }
 
 /*
@@ -3407,7 +3457,7 @@ mch_set_mouse_shape(int shape)
 }
 #endif
 
-#if (defined(FEAT_TOOLBAR) && defined(FEAT_BEVAL_GUI)) || defined(PROTO)
+#if (defined(FEAT_TOOLBAR) && defined(FEAT_BEVAL)) || defined(PROTO)
 /*
  * Set the balloon-eval used for the tooltip of a toolbar menu item.
  * The check for a non-toolbar item was added, because there is a crash when

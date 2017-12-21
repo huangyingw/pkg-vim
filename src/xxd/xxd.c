@@ -80,7 +80,14 @@
 #else
 # include <fcntl.h>
 #endif
-#if defined(WIN32) || defined(__BORLANDC__) || defined(CYGWIN)
+#ifdef __TSC__
+# define MSDOS
+#endif
+#if !defined(OS2) && defined(__EMX__)
+# define OS2
+#endif
+#if defined(MSDOS) || defined(WIN32) || defined(OS2) || defined(__BORLANDC__) \
+  || defined(CYGWIN)
 # include <io.h>	/* for setmode() */
 #else
 # ifdef UNIX
@@ -142,10 +149,18 @@ char version[] = "xxd V1.10 27oct98 by Juergen Weigert";
 #ifdef WIN32
 char osver[] = " (Win32)";
 #else
+# ifdef DJGPP
+char osver[] = " (dos 32 bit)";
+# else
+#  ifdef MSDOS
+char osver[] = " (dos 16 bit)";
+#  else
 char osver[] = "";
+#  endif
+# endif
 #endif
 
-#if defined(WIN32)
+#if defined(MSDOS) || defined(WIN32) || defined(OS2)
 # define BIN_READ(yes)  ((yes) ? "rb" : "rt")
 # define BIN_WRITE(yes) ((yes) ? "wb" : "wt")
 # define BIN_CREAT(yes) ((yes) ? (O_CREAT|O_BINARY) : O_CREAT)
@@ -188,7 +203,8 @@ char osver[] = "";
 #endif
 
 #ifndef __P
-# if defined(__STDC__) || defined(WIN32) || defined(__BORLANDC__)
+# if defined(__STDC__) || defined(MSDOS) || defined(WIN32) || defined(OS2) \
+		|| defined(__BORLANDC__)
 #  define __P(a) a
 # else
 #  define __P(a) ()

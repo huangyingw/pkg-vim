@@ -1,4 +1,4 @@
-/* vi:set ts=8 sw=8 noet:
+/* vi:set ts=8 sts=8 sw=8:
  *
  * VIM - Vi IMproved	by Bram Moolenaar
  *			Visual Workshop integration by Gordon Prieur

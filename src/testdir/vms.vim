@@ -1,6 +1,4 @@
 " Settings for test script execution under OpenVMS
 
-" Do not use any swap files
+" Do not make any swap files
 set noswapfile
-
-source setup.vim

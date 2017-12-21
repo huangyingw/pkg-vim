@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4 noet:
+/* vi:set ts=8 sts=4 sw=4:
  *
  * VIM - Vi IMproved	by Bram Moolenaar
  *
@@ -419,10 +419,6 @@ u_savecommon(
 	    }
 	}
 #endif
-#ifdef FEAT_TERMINAL
-	/* A change in a terminal buffer removes the highlighting. */
-	term_change_in_curbuf();
-#endif
 
 #ifdef FEAT_AUTOCMD
 	/*
@@ -538,7 +534,7 @@ u_savecommon(
 
 	uhp->uh_seq = ++curbuf->b_u_seq_last;
 	curbuf->b_u_seq_cur = uhp->uh_seq;
-	uhp->uh_time = vim_time();
+	uhp->uh_time = time(NULL);
 	uhp->uh_save_nr = 0;
 	curbuf->b_u_time_cur = uhp->uh_time + 1;
 
@@ -645,7 +641,7 @@ u_savecommon(
 	u_getbot();
     }
 
-#if !defined(UNIX) && !defined(WIN32)
+#if !defined(UNIX) && !defined(WIN32) && !defined(__EMX__)
 	/*
 	 * With Amiga we can't handle big undo's, because
 	 * then u_alloc_line would have to allocate a block larger than 32K
@@ -782,7 +778,7 @@ u_get_undo_file_name(char_u *buf_ffname, int reading)
     char_u	*undo_file_name = NULL;
     int		dir_len;
     char_u	*p;
-    stat_T	st;
+    struct stat st;
     char_u	*ffname = buf_ffname;
 #ifdef HAVE_READLINK
     char_u	fname_buf[MAXPATHL];
@@ -837,7 +833,7 @@ u_get_undo_file_name(char_u *buf_ffname, int reading)
 		    munged_name = vim_strsave(ffname);
 		    if (munged_name == NULL)
 			return NULL;
-		    for (p = munged_name; *p != NUL; MB_PTR_ADV(p))
+		    for (p = munged_name; *p != NUL; mb_ptr_adv(p))
 			if (vim_ispathsep(*p))
 			    *p = '%';
 		}
@@ -921,7 +917,7 @@ undo_write(bufinfo_T *bi, char_u *ptr, size_t len)
     static int
 undo_flush(bufinfo_T *bi)
 {
-    if (bi->bi_buffer != NULL && bi->bi_state != NULL && bi->bi_used > 0)
+    if (bi->bi_buffer != NULL && bi->bi_used > 0)
     {
 	crypt_encode_inplace(bi->bi_state, bi->bi_buffer, bi->bi_used);
 	if (fwrite(bi->bi_buffer, bi->bi_used, (size_t)1, bi->bi_fp) != 1)
@@ -1067,8 +1063,6 @@ undo_read_time(bufinfo_T *bi)
     static int
 undo_read(bufinfo_T *bi, char_u *buffer, size_t size)
 {
-    int retval = OK;
-
 #ifdef FEAT_CRYPT
     if (bi->bi_buffer != NULL)
     {
@@ -1082,10 +1076,12 @@ undo_read(bufinfo_T *bi, char_u *buffer, size_t size)
 	    if (bi->bi_used >= bi->bi_avail)
 	    {
 		n = fread(bi->bi_buffer, 1, (size_t)CRYPT_BUF_SIZE, bi->bi_fp);
-		if (n == 0)
+		if (n <= 0)
 		{
-		    retval = FAIL;
-		    break;
+		    /* Error may be checked for only later.  Fill with zeros,
+		     * so that the reader won't use garbage. */
+		    vim_memset(p, 0, size_todo);
+		    return FAIL;
 		}
 		bi->bi_avail = n;
 		bi->bi_used = 0;
@@ -1099,17 +1095,12 @@ undo_read(bufinfo_T *bi, char_u *buffer, size_t size)
 	    size_todo -= (int)n;
 	    p += n;
 	}
+	return OK;
     }
-    else
 #endif
     if (fread(buffer, (size_t)size, 1, bi->bi_fp) != 1)
-	retval = FAIL;
-
-    if (retval == FAIL)
-	/* Error may be checked for only later.  Fill with zeros,
-	 * so that the reader won't use garbage. */
-	vim_memset(buffer, 0, size);
-    return retval;
+	return FAIL;
+    return OK;
 }
 
 /*
@@ -1394,7 +1385,7 @@ unserialize_uep(bufinfo_T *bi, int *error, char_u *file_name)
 {
     int		i;
     u_entry_T	*uep;
-    char_u	**array = NULL;
+    char_u	**array;
     char_u	*line;
     int		line_len;
 
@@ -1411,8 +1402,7 @@ unserialize_uep(bufinfo_T *bi, int *error, char_u *file_name)
     uep->ue_size = undo_read_4c(bi);
     if (uep->ue_size > 0)
     {
-	if (uep->ue_size < LONG_MAX / (int)sizeof(char_u *))
-	    array = (char_u **)U_ALLOC_LINE(sizeof(char_u *) * uep->ue_size);
+	array = (char_u **)U_ALLOC_LINE(sizeof(char_u *) * uep->ue_size);
 	if (array == NULL)
 	{
 	    *error = TRUE;
@@ -1420,6 +1410,8 @@ unserialize_uep(bufinfo_T *bi, int *error, char_u *file_name)
 	}
 	vim_memset(array, 0, sizeof(char_u *) * uep->ue_size);
     }
+    else
+	array = NULL;
     uep->ue_array = array;
 
     for (i = 0; i < uep->ue_size; ++i)
@@ -1530,8 +1522,8 @@ u_write_undo(
     int		write_ok = FALSE;
 #ifdef UNIX
     int		st_old_valid = FALSE;
-    stat_T	st_old;
-    stat_T	st_new;
+    struct stat	st_old;
+    struct stat	st_new;
 #endif
     bufinfo_T	bi;
 
@@ -1750,7 +1742,7 @@ write_error:
     if (!write_ok)
 	EMSG2(_("E829: write error in undo file: %s"), file_name);
 
-#if defined(WIN3264)
+#if defined(MACOS_CLASSIC) || defined(WIN3264)
     /* Copy file attributes; for systems where this can only be done after
      * closing the file. */
     if (buf->b_ffname != NULL)
@@ -1795,7 +1787,7 @@ u_read_undo(char_u *name, char_u *hash, char_u *orig_name)
     linenr_T	line_lnum;
     colnr_T	line_colnr;
     linenr_T	line_count;
-    long	num_head = 0;
+    int		num_head = 0;
     long	old_header_seq, new_header_seq, cur_header_seq;
     long	seq_last, seq_cur;
     long	last_save_nr = 0;
@@ -1812,8 +1804,8 @@ u_read_undo(char_u *name, char_u *hash, char_u *orig_name)
     int		*uhp_table_used;
 #endif
 #ifdef UNIX
-    stat_T	st_orig;
-    stat_T	st_undo;
+    struct stat	st_orig;
+    struct stat	st_undo;
 #endif
     bufinfo_T	bi;
 
@@ -1982,8 +1974,7 @@ u_read_undo(char_u *name, char_u *hash, char_u *orig_name)
      * When there are no headers uhp_table is NULL. */
     if (num_head > 0)
     {
-	if (num_head < LONG_MAX / (long)sizeof(u_header_T *))
-	    uhp_table = (u_header_T **)U_ALLOC_LINE(
+	uhp_table = (u_header_T **)U_ALLOC_LINE(
 					     num_head * sizeof(u_header_T *));
 	if (uhp_table == NULL)
 	    goto error;
@@ -2307,8 +2298,10 @@ undo_time(
     }
     else
     {
+	/* When doing computations with time_t subtract starttime, because
+	 * time_t converted to a long may result in a wrong number. */
 	if (dosec)
-	    target = (long)(curbuf->b_u_time_cur) + step;
+	    target = (long)(curbuf->b_u_time_cur - starttime) + step;
 	else if (dofile)
 	{
 	    if (step < 0)
@@ -2357,7 +2350,7 @@ undo_time(
 	else
 	{
 	    if (dosec)
-		closest = (long)(vim_time() + 1);
+		closest = (long)(time(NULL) - starttime + 1);
 	    else if (dofile)
 		closest = curbuf->b_u_save_nr_last + 2;
 	    else
@@ -2395,7 +2388,7 @@ undo_time(
 	{
 	    uhp->uh_walk = mark;
 	    if (dosec)
-		val = (long)(uhp->uh_time);
+		val = (long)(uhp->uh_time - starttime);
 	    else if (dofile)
 		val = uhp->uh_save_nr;
 	    else
@@ -2589,7 +2582,7 @@ undo_time(
 	    if (uhp == NULL || uhp->uh_walk != mark)
 	    {
 		/* Need to redo more but can't find it... */
-		internal_error("undo_time()");
+		EMSG2(_(e_intern2), "undo_time()");
 		break;
 	    }
 	}
@@ -2661,7 +2654,7 @@ u_undoredo(int undo)
 #ifdef FEAT_AUTOCMD
 	    unblock_autocmds();
 #endif
-	    IEMSG(_("E438: u_undo: line numbers wrong"));
+	    EMSG(_("E438: u_undo: line numbers wrong"));
 	    changed();		/* don't want UNCHANGED now */
 	    return;
 	}
@@ -2793,7 +2786,7 @@ u_undoredo(int undo)
 
     curhead->uh_entry = newlist;
     curhead->uh_flags = new_flags;
-    if ((old_flags & UH_EMPTYBUF) && BUFEMPTY())
+    if ((old_flags & UH_EMPTYBUF) && bufempty())
 	curbuf->b_ml.ml_flags |= ML_EMPTY;
     if (old_flags & UH_CHANGED)
 	changed();
@@ -2863,14 +2856,9 @@ u_undoredo(int undo)
     /* Remember where we are for "g-" and ":earlier 10s". */
     curbuf->b_u_seq_cur = curhead->uh_seq;
     if (undo)
-    {
 	/* We are below the previous undo.  However, to make ":earlier 1s"
 	 * work we compute this as being just above the just undone change. */
-	if (curhead->uh_next.ptr != NULL)
-	    curbuf->b_u_seq_cur = curhead->uh_next.ptr->uh_seq;
-	else
-	    curbuf->b_u_seq_cur = 0;
-    }
+	--curbuf->b_u_seq_cur;
 
     /* Remember where we are for ":earlier 1f" and ":later 1f". */
     if (curhead->uh_save_nr != 0)
@@ -2989,7 +2977,7 @@ u_sync(
     if (curbuf->b_u_synced || (!force && no_u_sync > 0))
 	return;
 #if defined(FEAT_XIM) && defined(FEAT_GUI_GTK)
-    if (p_imst == IM_ON_THE_SPOT && im_is_preediting())
+    if (im_is_preediting())
 	return;		    /* XIM is busy, don't break an undo sequence */
 #endif
     if (get_undolevel() < 0)
@@ -3093,7 +3081,7 @@ ex_undolist(exarg_T *eap UNUSED)
 
 	msg_start();
 	msg_puts_attr((char_u *)_("number changes  when               saved"),
-							      HL_ATTR(HLF_T));
+							      hl_attr(HLF_T));
 	for (i = 0; i < ga.ga_len && !got_int; ++i)
 	{
 	    msg_putchar('\n');
@@ -3116,10 +3104,10 @@ u_add_time(char_u *buf, size_t buflen, time_t tt)
 #ifdef HAVE_STRFTIME
     struct tm	*curtime;
 
-    if (vim_time() - tt >= 100)
+    if (time(NULL) - tt >= 100)
     {
 	curtime = localtime(&tt);
-	if (vim_time() - tt < (60L * 60L * 12L))
+	if (time(NULL) - tt < (60L * 60L * 12L))
 	    /* within 12 hours */
 	    (void)strftime((char *)buf, buflen, "%H:%M:%S", curtime);
 	else
@@ -3129,7 +3117,7 @@ u_add_time(char_u *buf, size_t buflen, time_t tt)
     else
 #endif
 	vim_snprintf((char *)buf, buflen, _("%ld seconds ago"),
-						      (long)(vim_time() - tt));
+						     (long)(time(NULL) - tt));
 }
 
 /*
@@ -3150,8 +3138,11 @@ ex_undojoin(exarg_T *eap UNUSED)
     if (get_undolevel() < 0)
 	return;		    /* no entries, nothing to do */
     else
-	/* Append next change to the last entry */
-	curbuf->b_u_synced = FALSE;
+    {
+	/* Go back to the last entry */
+	curbuf->b_u_curhead = curbuf->b_u_newhead;
+	curbuf->b_u_synced = FALSE;  /* no entries, nothing to do */
+    }
 }
 
 /*
@@ -3189,14 +3180,14 @@ u_find_first_changed(void)
 	if (STRCMP(ml_get_buf(curbuf, lnum, FALSE),
 						uep->ue_array[lnum - 1]) != 0)
 	{
-	    CLEAR_POS(&(uhp->uh_cursor));
+	    clearpos(&(uhp->uh_cursor));
 	    uhp->uh_cursor.lnum = lnum;
 	    return;
 	}
     if (curbuf->b_ml.ml_line_count != uep->ue_size)
     {
 	/* lines added or deleted at the end, put the cursor there */
-	CLEAR_POS(&(uhp->uh_cursor));
+	clearpos(&(uhp->uh_cursor));
 	uhp->uh_cursor.lnum = lnum;
     }
 }
@@ -3243,7 +3234,7 @@ u_get_headentry(void)
 {
     if (curbuf->b_u_newhead == NULL || curbuf->b_u_newhead->uh_entry == NULL)
     {
-	IEMSG(_("E439: undo list corrupt"));
+	EMSG(_("E439: undo list corrupt"));
 	return NULL;
     }
     return curbuf->b_u_newhead->uh_entry;
@@ -3275,7 +3266,7 @@ u_getbot(void)
 	uep->ue_bot = uep->ue_top + uep->ue_size + 1 + extra;
 	if (uep->ue_bot < 1 || uep->ue_bot > curbuf->b_ml.ml_line_count)
 	{
-	    IEMSG(_("E440: undo line missing"));
+	    EMSG(_("E440: undo line missing"));
 	    uep->ue_bot = uep->ue_top + 1;  /* assume all lines deleted, will
 					     * get all the old lines back
 					     * without deleting the current
@@ -3523,33 +3514,25 @@ u_save_line(linenr_T lnum)
  * Check if the 'modified' flag is set, or 'ff' has changed (only need to
  * check the first character, because it can only be "dos", "unix" or "mac").
  * "nofile" and "scratch" type buffers are considered to always be unchanged.
- * Also considers a buffer changed when a terminal window contains a running
- * job.
  */
     int
 bufIsChanged(buf_T *buf)
 {
-#ifdef FEAT_TERMINAL
-    if (term_job_running(buf->b_term))
-	return TRUE;
+    return
+#ifdef FEAT_QUICKFIX
+	    !bt_dontwrite(buf) &&
 #endif
-    return bufIsChangedNotTerm(buf);
-}
-
-/*
- * Like bufIsChanged() but ignoring a terminal window.
- */
-    int
-bufIsChangedNotTerm(buf_T *buf)
-{
-    return !bt_dontwrite(buf)
-	&& (buf->b_changed || file_ff_differs(buf, TRUE));
+	    (buf->b_changed || file_ff_differs(buf, TRUE));
 }
 
     int
 curbufIsChanged(void)
 {
-    return bufIsChanged(curbuf);
+    return
+#ifdef FEAT_QUICKFIX
+	!bt_dontwrite(curbuf) &&
+#endif
+	(curbuf->b_changed || file_ff_differs(curbuf, TRUE));
 }
 
 #if defined(FEAT_EVAL) || defined(PROTO)

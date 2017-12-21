@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4 noet:
+/* vi:set ts=8 sts=4 sw=4:
  *
  * VIM - Vi IMproved	by Bram Moolenaar
  *
@@ -590,7 +590,7 @@ hangul_automata2(char_u *buf, int_u *c)
 	    return AUTOMATA_CORRECT_NEW;
 
 	default:
-	    IEMSG(_("E256: Hangul automata ERROR"));
+	    EMSG(_("E256: Hangul automata ERROR"));
 	    break;
     }
     return AUTOMATA_ERROR; /* RrEeAaLlLlYy EeRrRrOoRr */

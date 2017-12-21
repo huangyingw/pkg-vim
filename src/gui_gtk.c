@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4 noet:
+/* vi:set ts=8 sts=4 sw=4:
  *
  * VIM - Vi IMproved		by Bram Moolenaar
  *
@@ -652,11 +652,9 @@ gui_mch_add_menu(vimmenu_T *menu, int idx)
     parent_widget = (parent != NULL) ? parent->submenu_id : gui.menubar;
     menu_item_new(menu, parent_widget);
 
-# if !GTK_CHECK_VERSION(3,4,0)
     /* since the tearoff should always appear first, increment idx */
     if (parent != NULL && !menu_is_popup(parent->name))
 	++idx;
-# endif
 
     gtk_menu_shell_insert(GTK_MENU_SHELL(parent_widget), menu->id, idx);
 
@@ -775,22 +773,16 @@ gui_mch_add_menu_item(vimmenu_T *menu, int idx)
 	if (parent == NULL || parent->submenu_id == NULL)
 	    return;
 
-# if !GTK_CHECK_VERSION(3,4,0)
 	/* Make place for the possible tearoff handle item.  Not in the popup
 	 * menu, it doesn't have a tearoff item. */
 	if (!menu_is_popup(parent->name))
 	    ++idx;
-# endif
 
 	if (menu_is_separator(menu->name))
 	{
 	    /* Separator: Just add it */
-# if GTK_CHECK_VERSION(3,0,0)
-	    menu->id = gtk_separator_menu_item_new();
-# else
 	    menu->id = gtk_menu_item_new();
 	    gtk_widget_set_sensitive(menu->id, FALSE);
-# endif
 	    gtk_widget_show(menu->id);
 # if GTK_CHECK_VERSION(3,0,0)
 	    gtk_menu_shell_insert(GTK_MENU_SHELL(parent->submenu_id),
@@ -1160,6 +1152,7 @@ gui_mch_create_scrollbar(scrollbar_T *sb, int orient)
     }
 }
 
+#if defined(FEAT_WINDOWS) || defined(PROTO)
     void
 gui_mch_destroy_scrollbar(scrollbar_T *sb)
 {
@@ -1170,6 +1163,7 @@ gui_mch_destroy_scrollbar(scrollbar_T *sb)
     }
     gui_mch_update();
 }
+#endif
 
 #if defined(FEAT_BROWSE) || defined(PROTO)
 /*
@@ -1521,7 +1515,7 @@ split_button_string(char_u *button_string, int *n_buttons)
 	    else if (*p == DLG_HOTKEY_CHAR)
 		*p++ = '_';
 	    else
-		MB_PTR_ADV(p);
+		mb_ptr_adv(p);
 	}
 	array[count] = NULL; /* currently not relied upon, but doesn't hurt */
     }
@@ -1883,36 +1877,10 @@ gui_mch_show_popupmenu(vimmenu_T *menu)
 #  endif
 # endif /* FEAT_XIM */
 
-# if GTK_CHECK_VERSION(3,22,2)
-    {
-	GdkEventButton trigger;
-
-	/* A pseudo event to have gtk_menu_popup_at_pointer() work. Since the
-	 * function calculates the popup menu position on the basis of the
-	 * actual pointer position when it is invoked, the fields x, y, x_root
-	 * and y_root are set to zero for convenience. */
-	trigger.type       = GDK_BUTTON_PRESS;
-	trigger.window     = gtk_widget_get_window(gui.drawarea);
-	trigger.send_event = FALSE;
-	trigger.time       = gui.event_time;
-	trigger.x          = 0.0;
-	trigger.y          = 0.0;
-	trigger.axes       = NULL;
-	trigger.state      = 0;
-	trigger.button     = 3;
-	trigger.device     = NULL;
-	trigger.x_root     = 0.0;
-	trigger.y_root     = 0.0;
-
-	gtk_menu_popup_at_pointer(GTK_MENU(menu->submenu_id),
-				  (GdkEvent *)&trigger);
-    }
-#else
     gtk_menu_popup(GTK_MENU(menu->submenu_id),
 		   NULL, NULL,
 		   (GtkMenuPositionFunc)NULL, NULL,
 		   3U, gui.event_time);
-#endif
 }
 
 /* Ugly global variable to pass "mouse_pos" flag from gui_make_popup() to
@@ -1954,7 +1922,7 @@ popup_menu_position_func(GtkMenu *menu UNUSED,
 # endif
     {
 	/* Find the cursor position in the current window */
-	*x += FILL_X(curwin->w_wincol + curwin->w_wcol + 1) + 1;
+	*x += FILL_X(W_WINCOL(curwin) + curwin->w_wcol + 1) + 1;
 	*y += FILL_Y(W_WINROW(curwin) + curwin->w_wrow + 1) + 1;
     }
 }
@@ -1970,55 +1938,10 @@ gui_make_popup(char_u *path_name, int mouse_pos)
 
     if (menu != NULL && menu->submenu_id != NULL)
     {
-# if GTK_CHECK_VERSION(3,22,2)
-	GdkWindow * const win = gtk_widget_get_window(gui.drawarea);
-	GdkEventButton trigger;
-
-	/* A pseudo event to have gtk_menu_popup_at_*() functions work. Since
-	 * the position where the menu pops up is automatically adjusted by
-	 * the functions, none of the fields x, y, x_root and y_root has to be
-	 * set to a specific value here; therefore, they are set to zero for
-	 * convenience.*/
-	trigger.type       = GDK_BUTTON_PRESS;
-	trigger.window     = win;
-	trigger.send_event = FALSE;
-	trigger.time       = GDK_CURRENT_TIME;
-	trigger.x          = 0.0;
-	trigger.y          = 0.0;
-	trigger.axes       = NULL;
-	trigger.state      = 0;
-	trigger.button     = 0;
-	trigger.device     = NULL;
-	trigger.x_root     = 0.0;
-	trigger.y_root     = 0.0;
-
-	if (mouse_pos)
-	    gtk_menu_popup_at_pointer(GTK_MENU(menu->submenu_id),
-				      (GdkEvent *)&trigger);
-	else
-	{
-	    gint origin_x, origin_y;
-	    GdkRectangle rect = { 0, 0, 0, 0 };
-
-	    gdk_window_get_origin(win, &origin_x, &origin_y);
-	    popup_menu_position_func(NULL, &rect.x, &rect.y, NULL, NULL);
-
-	    rect.x -= origin_x;
-	    rect.y -= origin_y;
-
-	    gtk_menu_popup_at_rect(GTK_MENU(menu->submenu_id),
-				   win,
-				   &rect,
-				   GDK_GRAVITY_SOUTH_EAST,
-				   GDK_GRAVITY_NORTH_WEST,
-				   (GdkEvent *)&trigger);
-	}
-# else
 	gtk_menu_popup(GTK_MENU(menu->submenu_id),
 		       NULL, NULL,
 		       &popup_menu_position_func, NULL,
 		       0U, (guint32)GDK_CURRENT_TIME);
-# endif
     }
 }
 

@@ -1,6 +1,6 @@
 /*
- * config.h.in.  Originally generated automatically from configure.ac by
- * autoheader and manually changed after that.
+ * config.h.in.  Generated automatically from configure.in by autoheader, and
+ * manually changed after that.
  */
 
 /* Define if we have EBCDIC code */
@@ -29,6 +29,9 @@
 
 /* Define when __DATE__ " " __TIME__ can be used */
 #undef HAVE_DATE_TIME
+
+/* Defined as the date of last modification */
+#undef BUILD_DATE
 
 /* Define when __attribute__((unused)) can be used */
 #undef HAVE_ATTRIBUTE_UNUSED
@@ -154,15 +157,12 @@
 #undef BAD_GETCWD
 
 /* Define if you the function: */
+#undef HAVE_BCMP
 #undef HAVE_FCHDIR
 #undef HAVE_FCHOWN
-#undef HAVE_FCHMOD
-#undef HAVE_FLOAT_FUNCS
 #undef HAVE_FSEEKO
 #undef HAVE_FSYNC
-#undef HAVE_FTRUNCATE
 #undef HAVE_GETCWD
-#undef HAVE_GETPGID
 #undef HAVE_GETPSEUDOTTY
 #undef HAVE_GETPWENT
 #undef HAVE_GETPWNAM
@@ -171,12 +171,14 @@
 #undef HAVE_GETTIMEOFDAY
 #undef HAVE_GETWD
 #undef HAVE_ICONV
+#undef HAVE_NL_LANGINFO_CODESET
 #undef HAVE_LSTAT
+#undef HAVE_MEMCMP
 #undef HAVE_MEMSET
 #undef HAVE_MKDTEMP
 #undef HAVE_NANOSLEEP
-#undef HAVE_NL_LANGINFO_CODESET
 #undef HAVE_OPENDIR
+#undef HAVE_FLOAT_FUNCS
 #undef HAVE_PUTENV
 #undef HAVE_QSORT
 #undef HAVE_READLINK
@@ -191,7 +193,6 @@
 #undef HAVE_SIGSET
 #undef HAVE_SIGSETJMP
 #undef HAVE_SIGSTACK
-#undef HAVE_SIGPROCMASK
 #undef HAVE_SIGVEC
 #undef HAVE_SMACK
 #undef HAVE_STRCASECMP
@@ -214,7 +215,6 @@
 #undef HAVE_USLEEP
 #undef HAVE_UTIME
 #undef HAVE_BIND_TEXTDOMAIN_CODESET
-#undef HAVE_MBLEN
 
 /* Define, if needed, for accessing large files. */
 #undef _LARGE_FILES
@@ -386,9 +386,6 @@
 /* Define if you want to include multibyte support. */
 #undef FEAT_MBYTE
 
-/* Define if you want to always define a server name at vim startup. */
-#undef FEAT_AUTOSERVERNAME
-
 /* Define if you want to include fontset support. */
 #undef FEAT_XFONTSET
 
@@ -403,6 +400,9 @@
 
 /* Define if you use KDE and want KDE Toolbar support. */
 #undef FEAT_KDETOOLBAR
+
+/* Define if GTK+ multihead support is available (requires GTK+ >= 2.1.1). */
+#undef HAVE_GTK_MULTIHEAD
 
 /* Define if your X has own locale library */
 #undef X_LOCALE
@@ -437,9 +437,6 @@
 /* Define if you want to include process communication. */
 #undef FEAT_JOB_CHANNEL
 
-/* Define if you want to include terminal emulator support. */
-#undef FEAT_TERMINAL
-
 /* Define default global runtime path */
 #undef RUNTIME_GLOBAL
 
@@ -451,9 +448,6 @@
 
 /* Define if fcntl()'s F_SETFD command knows about FD_CLOEXEC */
 #undef HAVE_FD_CLOEXEC
-
-/* Define if /proc/self/exe or similar can be read */
-#undef PROC_EXE_LINK
 
 /* Define if you want Cygwin to use the WIN32 clipboard, not compatible with X11*/
 #undef FEAT_CYGWIN_WIN32_CLIPBOARD

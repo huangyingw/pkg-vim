@@ -1,4 +1,4 @@
-/* vi:set ts=8 sw=8 noet:
+/* vi:set ts=8 sw=8:
  *
  * VIM - Vi IMproved	by Bram Moolenaar
  *			Visual Workshop integration by Gordon Prieur
@@ -1077,7 +1077,7 @@ void workshop_perform_verb(char *verb, void *clientData)
 }
 
 /* Send a message to eserve */
-#if defined(NOHANDS_SUPPORT_FUNCTIONS) || defined(FEAT_BEVAL_GUI)
+#if defined(NOHANDS_SUPPORT_FUNCTIONS) || defined(FEAT_BEVAL)
 void workshop_send_message(char *buf)
 {
 	dummy = write(sd, buf, strlen(buf));

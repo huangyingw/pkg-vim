@@ -1,4 +1,4 @@
-/* vi:set ts=8 sw=8 noet:
+/* vi:set ts=8 sts=8 sw=8:
  *
  * VIM - Vi IMproved	by Bram Moolenaar
  *			Visual Workshop integration by Gordon Prieur
@@ -41,7 +41,7 @@ static int	 errorHandler(Display *, XErrorEvent *);
 
 /*
  * nbdebug_wait	-   This function can be used to delay or stop execution of vim.
- *		    It's normally used to delay startup while attaching a
+ *		    Its normally used to delay startup while attaching a
  *		    debugger to a running process. Since workshop starts gvim
  *		    from a background process this is the only way to debug
  *		    startup problems.

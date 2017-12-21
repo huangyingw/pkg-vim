@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4 noet:
+/* vi:set ts=8 sts=4 sw=4:
  *
  * VIM - Vi IMproved	by Bram Moolenaar
  *
@@ -17,8 +17,8 @@
 # define signal sigset
 #endif
 
-   /* Sun's sys/ioctl.h redefines symbols from termio world */
-#if defined(HAVE_SYS_IOCTL_H) && !defined(SUN_SYSTEM)
+   /* sun's sys/ioctl.h redefines symbols from termio world */
+#if defined(HAVE_SYS_IOCTL_H) && !defined(sun)
 # include <sys/ioctl.h>
 #endif
 
@@ -69,7 +69,16 @@
 #endif
 
 #ifdef HAVE_SYS_SYSTEMINFO_H
-/* <sys/systeminfo.h> uses SYS_NMLN but it may not be defined (CrayT3E). */
+/*
+ * foolish Sinix <sys/systeminfo.h> uses SYS_NMLN but doesn't include
+ * <limits.h>, where it is defined. Perhaps other systems have the same
+ * problem? Include it here. -- Slootman
+ */
+# if defined(HAVE_LIMITS_H) && !defined(_LIMITS_H)
+#  include <limits.h>		/* for SYS_NMLN (Sinix 5.41 / Unix SysV.4) */
+# endif
+
+/* Define SYS_NMLN ourselves if it still isn't defined (for CrayT3E). */
 # ifndef SYS_NMLN
 #  define SYS_NMLN 32
 # endif
@@ -104,7 +113,7 @@
 
 /* shared library access */
 #if defined(HAVE_DLFCN_H) && defined(USE_DLOPEN)
-# if defined(__MVS__) && !defined (__SUSV3)
+# ifdef __MVS__
     /* needed to define RTLD_LAZY (Anthony Giorgio) */
 #  define __SUSV3
 # endif

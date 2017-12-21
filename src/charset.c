@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4 noet:
+/* vi:set ts=8 sts=4 sw=4:
  *
  * VIM - Vi IMproved	by Bram Moolenaar
  *
@@ -571,7 +571,7 @@ transchar(int c)
 		    (c >= ' ' && c <= '~')
 #endif
 #ifdef FEAT_FKMAP
-			|| (p_altkeymap && F_ischar(c))
+			|| F_ischar(c)
 #endif
 		)) || (c < 256 && vim_isprintc_strict(c)))
     {
@@ -870,7 +870,7 @@ win_linetabsize(win_T *wp, char_u *line, colnr_T len)
     char_u	*s;
 
     for (s = line; *s != NUL && (len == MAXCOL || s < line + len);
-								MB_PTR_ADV(s))
+								mb_ptr_adv(s))
 	col += win_lbr_chartabsize(wp, line, s, col, NULL);
     return (int)col;
 }
@@ -887,7 +887,7 @@ vim_isIDc(int c)
 
 /*
  * return TRUE if 'c' is a keyword character: Letters and characters from
- * 'iskeyword' option for the current buffer.
+ * 'iskeyword' option for current buffer.
  * For multi-byte characters mb_get_class() is used (builtin rules).
  */
     int
@@ -899,17 +899,16 @@ vim_iswordc(int c)
     int
 vim_iswordc_buf(int c, buf_T *buf)
 {
+#ifdef FEAT_MBYTE
     if (c >= 0x100)
     {
-#ifdef FEAT_MBYTE
 	if (enc_dbcs != 0)
 	    return dbcs_class((unsigned)c >> 8, (unsigned)(c & 0xff)) >= 2;
 	if (enc_utf8)
-	    return utf_class_buf(c, buf) >= 2;
-#endif
-	return FALSE;
+	    return utf_class(c) >= 2;
     }
-    return (c > 0 && GET_CHARTAB(buf, c) != 0);
+#endif
+    return (c > 0 && c < 0x100 && GET_CHARTAB(buf, c) != 0);
 }
 
 /*
@@ -918,19 +917,21 @@ vim_iswordc_buf(int c, buf_T *buf)
     int
 vim_iswordp(char_u *p)
 {
-    return vim_iswordp_buf(p, curbuf);
+#ifdef FEAT_MBYTE
+    if (has_mbyte && MB_BYTE2LEN(*p) > 1)
+	return mb_get_class(p) >= 2;
+#endif
+    return GET_CHARTAB(curbuf, *p) != 0;
 }
 
     int
 vim_iswordp_buf(char_u *p, buf_T *buf)
 {
-    int	c = *p;
-
 #ifdef FEAT_MBYTE
-    if (has_mbyte && MB_BYTE2LEN(c) > 1)
-	c = (*mb_ptr2char)(p);
+    if (has_mbyte && MB_BYTE2LEN(*p) > 1)
+	return mb_get_class(p) >= 2;
 #endif
-    return vim_iswordc_buf(c, buf);
+    return (GET_CHARTAB(buf, *p) != 0);
 }
 
 /*
@@ -960,7 +961,7 @@ vim_isfilec_or_wc(int c)
 }
 
 /*
- * Return TRUE if 'c' is a printable character.
+ * return TRUE if 'c' is a printable character
  * Assume characters above 0x100 are printable (multi-byte), except for
  * Unicode.
  */
@@ -1026,7 +1027,7 @@ lbr_chartabsize_adv(
     int		retval;
 
     retval = lbr_chartabsize(line, *s, col);
-    MB_PTR_ADV(*s);
+    mb_ptr_adv(*s);
     return retval;
 }
 
@@ -1089,10 +1090,13 @@ win_lbr_chartabsize(
      * needs a break here
      */
     if (wp->w_p_lbr
-	    && VIM_ISBREAK(c)
-	    && !VIM_ISBREAK((int)s[1])
+	    && vim_isbreak(c)
+	    && !vim_isbreak(s[1])
 	    && wp->w_p_wrap
-	    && wp->w_width != 0)
+# ifdef FEAT_WINDOWS
+	    && wp->w_width != 0
+# endif
+       )
     {
 	/*
 	 * Count all characters from first non-blank after a blank up to next
@@ -1100,7 +1104,7 @@ win_lbr_chartabsize(
 	 */
 	numberextra = win_col_off(wp);
 	col2 = col;
-	colmax = (colnr_T)(wp->w_width - numberextra - col_adj);
+	colmax = (colnr_T)(W_WIDTH(wp) - numberextra - col_adj);
 	if (col >= colmax)
 	{
 	    colmax += col_adj;
@@ -1112,12 +1116,12 @@ win_lbr_chartabsize(
 	for (;;)
 	{
 	    ps = s;
-	    MB_PTR_ADV(s);
+	    mb_ptr_adv(s);
 	    c = *s;
 	    if (!(c != NUL
-		    && (VIM_ISBREAK(c)
-			|| (!VIM_ISBREAK(c)
-			    && (col2 == col || !VIM_ISBREAK((int)*ps))))))
+		    && (vim_isbreak(c)
+			|| (!vim_isbreak(c)
+			    && (col2 == col || !vim_isbreak(*ps))))))
 		break;
 
 	    col2 += win_chartabsize(wp, s, col2);
@@ -1151,10 +1155,10 @@ win_lbr_chartabsize(
 
 	numberextra = numberwidth;
 	col += numberextra + mb_added;
-	if (col >= (colnr_T)wp->w_width)
+	if (col >= (colnr_T)W_WIDTH(wp))
 	{
-	    col -= wp->w_width;
-	    numberextra = wp->w_width - (numberextra - win_col_off2(wp));
+	    col -= W_WIDTH(wp);
+	    numberextra = W_WIDTH(wp) - (numberextra - win_col_off2(wp));
 	    if (col >= numberextra && numberextra > 0)
 		col %= numberextra;
 	    if (*p_sbr != NUL)
@@ -1170,18 +1174,18 @@ win_lbr_chartabsize(
 
 	    numberwidth -= win_col_off2(wp);
 	}
-	if (col == 0 || col + size + sbrlen > (colnr_T)wp->w_width)
+	if (col == 0 || col + size + sbrlen > (colnr_T)W_WIDTH(wp))
 	{
 	    added = 0;
 	    if (*p_sbr != NUL)
 	    {
-		if (size + sbrlen + numberwidth > (colnr_T)wp->w_width)
+		if (size + sbrlen + numberwidth > (colnr_T)W_WIDTH(wp))
 		{
 		    /* calculate effective window width */
-		    int width = (colnr_T)wp->w_width - sbrlen - numberwidth;
-		    int prev_width = col ? ((colnr_T)wp->w_width - (sbrlen + col)) : 0;
+		    int width = (colnr_T)W_WIDTH(wp) - sbrlen - numberwidth;
+		    int prev_width = col ? ((colnr_T)W_WIDTH(wp) - (sbrlen + col)) : 0;
 		    if (width == 0)
-			width = (colnr_T)wp->w_width;
+			width = (colnr_T)W_WIDTH(wp);
 		    added += ((size - prev_width) / width) * vim_strsize(p_sbr);
 		    if ((size - prev_width) % width)
 			/* wrapped, add another length of 'sbr' */
@@ -1246,9 +1250,11 @@ in_win_border(win_T *wp, colnr_T vcol)
     int		width1;		/* width of first line (after line number) */
     int		width2;		/* width of further lines */
 
+# ifdef FEAT_WINDOWS
     if (wp->w_width == 0)	/* there is no border */
 	return FALSE;
-    width1 = wp->w_width - win_col_off(wp);
+# endif
+    width1 = W_WIDTH(wp) - win_col_off(wp);
     if ((int)vcol < width1 - 1)
 	return FALSE;
     if ((int)vcol == width1 - 1)
@@ -1290,18 +1296,7 @@ getvcol(
     if (pos->col == MAXCOL)
 	posptr = NULL;  /* continue until the NUL */
     else
-    {
-	/* Special check for an empty line, which can happen on exit, when
-	 * ml_get_buf() always returns an empty string. */
-	if (*ptr == NUL)
-	    pos->col = 0;
 	posptr = ptr + pos->col;
-#ifdef FEAT_MBYTE
-	if (has_mbyte)
-	    /* always start on the first byte */
-	    posptr -= (*mb_head_off)(line, posptr);
-#endif
-    }
 
     /*
      * This function is used very often, do some speed optimizations.
@@ -1364,7 +1359,7 @@ getvcol(
 		break;
 
 	    vcol += incr;
-	    MB_PTR_ADV(ptr);
+	    mb_ptr_adv(ptr);
 	}
     }
     else
@@ -1385,7 +1380,7 @@ getvcol(
 		break;
 
 	    vcol += incr;
-	    MB_PTR_ADV(ptr);
+	    mb_ptr_adv(ptr);
 	}
     }
     if (start != NULL)
@@ -1398,8 +1393,7 @@ getvcol(
 		&& (State & NORMAL)
 		&& !wp->w_p_list
 		&& !virtual_active()
-		&& !(VIsual_active
-				&& (*p_sel == 'e' || LTOREQ_POS(*pos, VIsual)))
+		&& !(VIsual_active && (*p_sel == 'e' || ltoreq(*pos, VIsual)))
 		)
 	    *cursor = vcol + incr - 1;	    /* cursor at end */
 	else
@@ -1492,7 +1486,7 @@ getvcols(
 {
     colnr_T	from1, from2, to1, to2;
 
-    if (LT_POSP(pos1, pos2))
+    if (ltp(pos1, pos2))
     {
 	getvvcol(wp, pos1, &from1, NULL, &to1);
 	getvvcol(wp, pos2, &from2, NULL, &to2);
@@ -1525,25 +1519,9 @@ skipwhite(char_u *q)
 {
     char_u	*p = q;
 
-    while (VIM_ISWHITE(*p)) /* skip to next non-white */
+    while (vim_iswhite(*p)) /* skip to next non-white */
 	++p;
     return p;
-}
-
-/*
- * getwhitecols: return the number of whitespace
- * columns (bytes) at the start of a given line
- */
-    int
-getwhitecols_curline()
-{
-    return getwhitecols(ml_get_curline());
-}
-
-    int
-getwhitecols(char_u *p)
-{
-    return skipwhite(p) - p;
 }
 
 /*
@@ -1728,7 +1706,7 @@ vim_toupper(int c)
 {
     if (c <= '@')
 	return c;
-    if (c >= 0x80 || !(cmp_flags & CMP_KEEPASCII))
+    if (c >= 0x80)
     {
 	if (enc_utf8)
 	    return utf_toupper(c);
@@ -1744,8 +1722,6 @@ vim_toupper(int c)
 	if (enc_latin1like)
 	    return latin1upper[c];
     }
-    if (c < 0x80 && (cmp_flags & CMP_KEEPASCII))
-	return TOUPPER_ASC(c);
     return TOUPPER_LOC(c);
 }
 
@@ -1754,7 +1730,7 @@ vim_tolower(int c)
 {
     if (c <= '@')
 	return c;
-    if (c >= 0x80 || !(cmp_flags & CMP_KEEPASCII))
+    if (c >= 0x80)
     {
 	if (enc_utf8)
 	    return utf_tolower(c);
@@ -1770,8 +1746,6 @@ vim_tolower(int c)
 	if (enc_latin1like)
 	    return latin1lower[c];
     }
-    if (c < 0x80 && (cmp_flags & CMP_KEEPASCII))
-	return TOLOWER_ASC(c);
     return TOLOWER_LOC(c);
 }
 #endif
@@ -1852,7 +1826,7 @@ vim_isblankline(char_u *lbuf)
  * If "what" contains STR2NR_OCT recognize octal numbers
  * If "what" contains STR2NR_HEX recognize hex numbers
  * If "what" contains STR2NR_FORCE always assume bin/oct/hex.
- * If maxlen > 0, check at a maximum maxlen chars.
+ * If maxlen > 0, check at a maximum maxlen chars
  */
     void
 vim_str2nr(
@@ -1862,14 +1836,14 @@ vim_str2nr(
 				       is bin */
     int			*len,	    /* return: detected length of number */
     int			what,	    /* what numbers to recognize */
-    varnumber_T		*nptr,	    /* return: signed result */
-    uvarnumber_T	*unptr,	    /* return: unsigned result */
+    long		*nptr,	    /* return: signed result */
+    unsigned long	*unptr,	    /* return: unsigned result */
     int			maxlen)     /* max length of string to check */
 {
     char_u	    *ptr = start;
     int		    pre = 0;		/* default is decimal */
     int		    negative = FALSE;
-    uvarnumber_T    un = 0;
+    unsigned long   un = 0;
     int		    n;
 
     if (ptr[0] == '-')
@@ -1900,14 +1874,17 @@ vim_str2nr(
 	    if (what & STR2NR_OCT)
 	    {
 		/* Don't interpret "0", "08" or "0129" as octal. */
-		for (n = 1; n != maxlen && VIM_ISDIGIT(ptr[n]); ++n)
+		for (n = 1; VIM_ISDIGIT(ptr[n]); ++n)
 		{
 		    if (ptr[n] > '7')
 		    {
 			pre = 0;	/* can't be octal */
 			break;
 		    }
-		    pre = '0';	/* assume octal */
+		    if (ptr[n] >= '0')
+			pre = '0';	/* assume octal */
+		    if (n == maxlen)
+			break;
 		}
 	    }
 	}
@@ -1924,11 +1901,7 @@ vim_str2nr(
 	    n += 2;	    /* skip over "0b" */
 	while ('0' <= *ptr && *ptr <= '1')
 	{
-	    /* avoid ubsan error for overflow */
-	    if (un < UVARNUM_MAX / 2)
-		un = 2 * un + (unsigned long)(*ptr - '0');
-	    else
-		un = UVARNUM_MAX;
+	    un = 2 * un + (unsigned long)(*ptr - '0');
 	    ++ptr;
 	    if (n++ == maxlen)
 		break;
@@ -1939,11 +1912,7 @@ vim_str2nr(
 	/* octal */
 	while ('0' <= *ptr && *ptr <= '7')
 	{
-	    /* avoid ubsan error for overflow */
-	    if (un < UVARNUM_MAX / 8)
-		un = 8 * un + (uvarnumber_T)(*ptr - '0');
-	    else
-		un = UVARNUM_MAX;
+	    un = 8 * un + (unsigned long)(*ptr - '0');
 	    ++ptr;
 	    if (n++ == maxlen)
 		break;
@@ -1956,11 +1925,7 @@ vim_str2nr(
 	    n += 2;	    /* skip over "0x" */
 	while (vim_isxdigit(*ptr))
 	{
-	    /* avoid ubsan error for overflow */
-	    if (un < UVARNUM_MAX / 16)
-		un = 16 * un + (uvarnumber_T)hex2nr(*ptr);
-	    else
-		un = UVARNUM_MAX;
+	    un = 16 * un + (unsigned long)hex2nr(*ptr);
 	    ++ptr;
 	    if (n++ == maxlen)
 		break;
@@ -1971,11 +1936,7 @@ vim_str2nr(
 	/* decimal */
 	while (VIM_ISDIGIT(*ptr))
 	{
-	    /* avoid ubsan error for overflow */
-	    if (un < UVARNUM_MAX / 10)
-		un = 10 * un + (uvarnumber_T)(*ptr - '0');
-	    else
-		un = UVARNUM_MAX;
+	    un = 10 * un + (unsigned long)(*ptr - '0');
 	    ++ptr;
 	    if (n++ == maxlen)
 		break;
@@ -1989,19 +1950,9 @@ vim_str2nr(
     if (nptr != NULL)
     {
 	if (negative)   /* account for leading '-' for decimal numbers */
-	{
-	    /* avoid ubsan error for overflow */
-	    if (un > VARNUM_MAX)
-		*nptr = VARNUM_MIN;
-	    else
-		*nptr = -(varnumber_T)un;
-	}
+	    *nptr = -(long)un;
 	else
-	{
-	    if (un > VARNUM_MAX)
-		un = VARNUM_MAX;
-	    *nptr = (varnumber_T)un;
-	}
+	    *nptr = (long)un;
     }
     if (unptr != NULL)
 	*unptr = un;
@@ -2021,7 +1972,8 @@ hex2nr(int c)
     return c - '0';
 }
 
-#if defined(FEAT_TERMRESPONSE) || defined(FEAT_GUI_GTK) || defined(PROTO)
+#if defined(FEAT_TERMRESPONSE) \
+	|| (defined(FEAT_GUI_GTK) && defined(FEAT_WINDOWS)) || defined(PROTO)
 /*
  * Convert two hex characters to a byte.
  * Return -1 if one of the characters is not hex.

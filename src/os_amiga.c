@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4 noet:
+/* vi:set ts=8 sts=4 sw=4:
  *
  * VIM - Vi IMproved	by Bram Moolenaar
  *
@@ -889,8 +889,6 @@ mch_early_init(void)
     void
 mch_exit(int r)
 {
-    exiting = TRUE;
-
     if (raw_in)			    /* put terminal in 'normal' mode */
     {
 	settmode(TMODE_COOK);
@@ -1125,7 +1123,7 @@ out_num(long n)
 dos_packet(
     struct MsgPort *pid,    /* process identifier ... (handlers message port) */
     long	    action, /* packet type ... (what you want handler to do)   */
-    long	    arg)    /* single argument */
+		    arg)    /* single argument */
 {
 # ifdef FEAT_ARP
     struct MsgPort	    *replyport;
@@ -1383,7 +1381,7 @@ mch_call_shell(
  * trouble with lattice-c programs.
  */
     void
-mch_breakcheck(int force)
+mch_breakcheck(void)
 {
    if (SetSignal(0L, (long)(SIGBREAKF_CTRL_C|SIGBREAKF_CTRL_D|SIGBREAKF_CTRL_E|SIGBREAKF_CTRL_F)) & SIGBREAKF_CTRL_C)
 	got_int = TRUE;
@@ -1567,7 +1565,7 @@ sortcmp(const void *a, const void *b)
     int
 mch_has_exp_wildcard(char_u *p)
 {
-    for ( ; *p; MB_PTR_ADV(p))
+    for ( ; *p; mb_ptr_adv(p))
     {
 	if (*p == '\\' && p[1] != NUL)
 	    ++p;
@@ -1580,7 +1578,7 @@ mch_has_exp_wildcard(char_u *p)
     int
 mch_has_wildcard(char_u *p)
 {
-    for ( ; *p; MB_PTR_ADV(p))
+    for ( ; *p; mb_ptr_adv(p))
     {
 	if (*p == '\\' && p[1] != NUL)
 	    ++p;

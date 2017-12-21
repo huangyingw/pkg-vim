@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4 noet:
+/* vi:set ts=8 sts=4 sw=4:
  *
  * NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE
  *
@@ -165,8 +165,8 @@ struct regengine
 {
     regprog_T	*(*regcomp)(char_u*, int);
     void	(*regfree)(regprog_T *);
-    int		(*regexec_nl)(regmatch_T *, char_u *, colnr_T, int);
-    long	(*regexec_multi)(regmmatch_T *, win_T *, buf_T *, linenr_T, colnr_T, proftime_T *, int *);
+    int		(*regexec_nl)(regmatch_T*, char_u*, colnr_T, int);
+    long	(*regexec_multi)(regmmatch_T*, win_T*, buf_T*, linenr_T, colnr_T, proftime_T*);
     char_u	*expr;
 };
 

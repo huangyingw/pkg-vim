@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4 noet: */
+/* vi:set ts=8 sts=4 sw=4: */
 /*
  * The following software is (C) 1984 Peter da Silva, the Mad Australian, in
  * the public domain. It may be re-distributed for any purpose with the
@@ -13,7 +13,7 @@
 #include "vim.h"
 #include "termlib.pro"
 
-#if !defined(AMIGA) && !defined(VMS)
+#if !defined(AMIGA) && !defined(VMS) && !defined(MACOS)
 # include <sgtty.h>
 #endif
 

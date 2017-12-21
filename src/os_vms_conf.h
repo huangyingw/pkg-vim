@@ -101,6 +101,7 @@
 #define HAVE_STRTOL
 #define HAVE_TGETENT
 #define HAVE_MEMSET
+#define HAVE_MEMCMP
 #define HAVE_STRERROR
 #define HAVE_FCHOWN
 #define HAVE_RENAME
@@ -140,7 +141,6 @@
 #undef	HAVE_SYS_POLL_H
 #undef	HAVE_PWD_H
 #undef  HAVE_FCHDIR
-#undef  HAVE_LSTAT
 
 /* Hardware specific */
 #ifdef  VAX
@@ -148,15 +148,13 @@
 #undef  HAVE_USLEEP
 #undef  HAVE_STRCASECMP
 #undef  HAVE_STRINGS_H
-#undef  HAVE_SIGSETJMP
-#undef  HAVE_ISNAN
+#undef	HAVE_SIGSETJMP
 #else
 #define HAVE_GETTIMEOFDAY
 #define HAVE_USLEEP
 #define HAVE_STRCASECMP
 #define HAVE_STRINGS_H
-#define HAVE_SIGSETJMP
-#define HAVE_ISNAN
+#define	HAVE_SIGSETJMP
 #endif
 
 /* Compiler specific */

@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4 noet:
+/* vi:set ts=8 sts=4 sw=4:
  *
  * VIM - Vi IMproved		by Bram Moolenaar
  *
@@ -15,8 +15,6 @@
  * Note about Lesstif: Apparently lesstif doesn't get the widget layout right,
  * when using a dynamic scrollbar policy.
  */
-
-#include "vim.h"
 
 #include <Xm/Form.h>
 #include <Xm/PushBG.h>
@@ -37,6 +35,8 @@
 #include <X11/Xatom.h>
 #include <X11/StringDefs.h>
 #include <X11/Intrinsic.h>
+
+#include "vim.h"
 
 extern Widget vimShell;
 

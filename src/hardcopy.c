@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4 noet:
+/* vi:set ts=8 sts=4 sw=4:
  *
  * VIM - Vi IMproved	by Bram Moolenaar
  *
@@ -164,7 +164,7 @@ parse_printoptions(void)
 
 #if (defined(FEAT_MBYTE) && defined(FEAT_POSTSCRIPT)) || defined(PROTO)
 /*
- * Parse 'printmbfont' and set the flags in "mbfont_opts".
+ * Parse 'printoptions' and set the flags in "printer_opts".
  * Returns an error message or NULL;
  */
     char_u *
@@ -189,8 +189,6 @@ parse_list_options(
     option_table_T	*table,
     int			table_size)
 {
-    option_table_T *old_opts;
-    char_u	*ret = NULL;
     char_u	*stringp;
     char_u	*colonp;
     char_u	*commap;
@@ -198,16 +196,8 @@ parse_list_options(
     int		idx = 0;		/* init for GCC */
     int		len;
 
-    /* Save the old values, so that they can be restored in case of an error. */
-    old_opts = (option_table_T *)alloc(sizeof(option_table_T) * table_size);
-    if (old_opts == NULL)
-	return NULL;
-
     for (idx = 0; idx < table_size; ++idx)
-    {
-	old_opts[idx] = table[idx];
 	table[idx].present = FALSE;
-    }
 
     /*
      * Repeat for all comma separated parts.
@@ -217,10 +207,7 @@ parse_list_options(
     {
 	colonp = vim_strchr(stringp, ':');
 	if (colonp == NULL)
-	{
-	    ret = (char_u *)N_("E550: Missing colon");
-	    break;
-	}
+	    return (char_u *)N_("E550: Missing colon");
 	commap = vim_strchr(stringp, ',');
 	if (commap == NULL)
 	    commap = option_str + STRLEN(option_str);
@@ -232,20 +219,15 @@ parse_list_options(
 		break;
 
 	if (idx == table_size)
-	{
-	    ret = (char_u *)N_("E551: Illegal component");
-	    break;
-	}
+	    return (char_u *)N_("E551: Illegal component");
+
 	p = colonp + 1;
 	table[idx].present = TRUE;
 
 	if (table[idx].hasnum)
 	{
 	    if (!VIM_ISDIGIT(*p))
-	    {
-		ret = (char_u *)N_("E552: digit expected");
-		break;
-	    }
+		return (char_u *)N_("E552: digit expected");
 
 	    table[idx].number = getdigits(&p); /*advances p*/
 	}
@@ -258,14 +240,7 @@ parse_list_options(
 	    ++stringp;
     }
 
-    if (ret != NULL)
-    {
-	/* Restore old options in case of error */
-	for (idx = 0; idx < table_size; ++idx)
-	    table[idx] = old_opts[idx];
-    }
-    vim_free(old_opts);
-    return ret;
+    return NULL;
 }
 
 
@@ -307,8 +282,8 @@ prt_get_attr(
     pattr->underline = (highlight_has_attr(hl_id, HL_UNDERLINE, modec) != NULL);
     pattr->undercurl = (highlight_has_attr(hl_id, HL_UNDERCURL, modec) != NULL);
 
-# if defined(FEAT_GUI) || defined(FEAT_TERMGUICOLORS)
-    if (USE_24BIT)
+# ifdef FEAT_GUI
+    if (gui.in_use)
     {
 	bg_color = highlight_gui_color_rgb(hl_id, FALSE);
 	if (bg_color == PRCOLOR_BLACK)
@@ -569,7 +544,7 @@ prt_header(
 prt_message(char_u *s)
 {
     screen_fill((int)Rows - 1, (int)Rows, 0, (int)Columns, ' ', ' ', 0);
-    screen_puts(s, (int)Rows - 1, 0, HL_ATTR(HLF_R));
+    screen_puts(s, (int)Rows - 1, 0, hl_attr(HLF_R));
     out_flush();
 }
 

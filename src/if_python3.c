@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4 noet:
+/* vi:set ts=8 sts=4 sw=4:
  *
  * VIM - Vi IMproved    by Bram Moolenaar
  *
@@ -74,6 +74,10 @@
 
 #include <Python.h>
 
+#if defined(MACOS) && !defined(MACOS_X_UNIX)
+# include "macglue.h"
+# include <CodeFragments.h>
+#endif
 #undef main /* Defined in python.h - aargh */
 #undef HAVE_FCNTL_H /* Clash with os_win32.h */
 
@@ -729,8 +733,8 @@ get_py3_exceptions(void)
 #endif /* DYNAMIC_PYTHON3 */
 
 static int py3initialised = 0;
+
 #define PYINITIALISED py3initialised
-static int python_end_called = FALSE;
 
 #define DESTRUCTOR_FINISH(self) Py_TYPE(self)->tp_free((PyObject*)self)
 
@@ -813,7 +817,6 @@ python3_end(void)
     if (recurse != 0)
 	return;
 
-    python_end_called = TRUE;
     ++recurse;
 
 #ifdef DYNAMIC_PYTHON3
@@ -867,8 +870,11 @@ Python3_Init(void)
 
 	PyImport_AppendInittab("vim", Py3Init_vim);
 
+#if !defined(MACOS) || defined(MACOS_X_UNIX)
 	Py_Initialize();
-
+#else
+	PyMac_Initialize();
+#endif
 	/* Initialise threads, and below save the state using
 	 * PyEval_SaveThread.  Without the call to PyEval_SaveThread, thread
 	 * specific state (such as the system trace hook), will be lost
@@ -922,6 +928,9 @@ fail:
     static void
 DoPyCommand(const char *cmd, rangeinitializer init_range, runner run, void *arg)
 {
+#if defined(MACOS) && !defined(MACOS_X_UNIX)
+    GrafPtr		oldPort;
+#endif
 #if defined(HAVE_LOCALE_H) || defined(X_LOCALE)
     char		*saved_locale;
 #endif
@@ -929,9 +938,12 @@ DoPyCommand(const char *cmd, rangeinitializer init_range, runner run, void *arg)
     PyObject		*cmdbytes;
     PyGILState_STATE	pygilstate;
 
-    if (python_end_called)
+#if defined(MACOS) && !defined(MACOS_X_UNIX)
+    GetPort(&oldPort);
+    /* Check if the Python library is available */
+    if ((Ptr)PyMac_Initialize == (Ptr)kUnresolvedCFragSymbolAddress)
 	goto theend;
-
+#endif
     if (Python3_Init())
 	goto theend;
 
@@ -976,6 +988,9 @@ DoPyCommand(const char *cmd, rangeinitializer init_range, runner run, void *arg)
 
     Python_Lock_Vim();		    /* enter vim */
     PythonIO_Flush();
+#if defined(MACOS) && !defined(MACOS_X_UNIX)
+    SetPort(oldPort);
+#endif
 
 theend:
     return;	    /* keeps lint happy */
@@ -988,9 +1003,6 @@ theend:
 ex_py3(exarg_T *eap)
 {
     char_u *script;
-
-    if (p_pyx == 0)
-	p_pyx = 3;
 
     script = script_get(eap, eap->arg);
     if (!eap->skip)
@@ -1015,9 +1027,6 @@ ex_py3file(exarg_T *eap)
     const char *file;
     char *p;
     int i;
-
-    if (p_pyx == 0)
-	p_pyx = 3;
 
     /* Have to do it like this. PyRun_SimpleFile requires you to pass a
      * stdio file pointer, but Vim and the Python DLL are compiled with
@@ -1071,9 +1080,6 @@ ex_py3file(exarg_T *eap)
     void
 ex_py3do(exarg_T *eap)
 {
-    if (p_pyx == 0)
-	p_pyx = 3;
-
     DoPyCommand((char *)eap->arg,
 	    (rangeinitializer)init_range_cmd,
 	    (runner)run_do,
@@ -1094,10 +1100,6 @@ OutputGetattro(PyObject *self, PyObject *nameobj)
 
     if (strcmp(name, "softspace") == 0)
 	return PyLong_FromLong(((OutputObject *)(self))->softspace);
-    else if (strcmp(name, "errors") == 0)
-	return PyString_FromString("strict");
-    else if (strcmp(name, "encoding") == 0)
-	return PyString_FromString(ENC_OPT);
 
     return PyObject_GenericGetAttr(self, nameobj);
 }
@@ -1526,16 +1528,14 @@ ListSetattro(PyObject *self, PyObject *nameobj, PyObject *val)
     static PyObject *
 FunctionGetattro(PyObject *self, PyObject *nameobj)
 {
-    PyObject		*r;
     FunctionObject	*this = (FunctionObject *)(self);
 
     GET_ATTR_STRING(name, nameobj);
 
-    r = FunctionAttr(this, name);
-    if (r || PyErr_Occurred())
-	return r;
-    else
-	return PyObject_GenericGetAttr(self, nameobj);
+    if (strcmp(name, "name") == 0)
+	return PyUnicode_FromString((char *)(this->name));
+
+    return PyObject_GenericGetAttr(self, nameobj);
 }
 
 /* External interface
@@ -1552,6 +1552,7 @@ python3_buffer_free(buf_T *buf)
     }
 }
 
+#if defined(FEAT_WINDOWS) || defined(PROTO)
     void
 python3_window_free(win_T *win)
 {
@@ -1573,6 +1574,7 @@ python3_tabpage_free(tabpage_T *tab)
 	TAB_PYTHON_REF(tab) = NULL;
     }
 }
+#endif
 
     static PyObject *
 Py3Init_vim(void)

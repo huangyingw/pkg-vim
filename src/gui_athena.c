@@ -1,4 +1,4 @@
-/* vi:set ts=8 sts=4 sw=4 noet:
+/* vi:set ts=8 sts=4 sw=4:
  *
  * VIM - Vi IMproved		by Bram Moolenaar
  *				GUI/Motif support by Robert Webb
@@ -8,8 +8,6 @@
  * Do ":help credits" in Vim to see a list of people who contributed.
  * See README.txt for an overview of the Vim source code.
  */
-
-#include "vim.h"
 
 #include <X11/StringDefs.h>
 #include <X11/Intrinsic.h>
@@ -36,6 +34,7 @@
 # include <X11/Xaw/AsciiText.h>
 #endif /* FEAT_GUI_NEXTAW */
 
+#include "vim.h"
 #ifndef FEAT_GUI_NEXTAW
 # include "gui_at_sb.h"
 #endif
@@ -1019,7 +1018,7 @@ gui_mch_new_menu_font(void)
 	XFreePixmap(gui.dpy, oldpuller);
 }
 
-#if defined(FEAT_BEVAL_GUI) || defined(PROTO)
+#if defined(FEAT_BEVAL) || defined(PROTO)
     void
 gui_mch_new_tooltip_font(void)
 {
@@ -1076,7 +1075,7 @@ gui_mch_submenu_change(
 			XtVaSetValues(mp->id, XtNbitmap, mp->image, NULL);
 		}
 
-# ifdef FEAT_BEVAL_GUI
+# ifdef FEAT_BEVAL
 		/* If we have a tooltip, then we need to change it's colors */
 		if (mp->tip != NULL)
 		{
@@ -1094,7 +1093,7 @@ gui_mch_submenu_change(
 	    else
 	    {
 		gui_athena_menu_font(mp->id);
-#ifdef FEAT_BEVAL_GUI
+#ifdef FEAT_BEVAL
 		/* If we have a tooltip, then we need to change it's font */
 		/* Assume XtNinternational == True (in createBalloonEvalWindow)
 		 */
@@ -1201,7 +1200,7 @@ gui_mch_add_menu_item(vimmenu_T *menu, int idx UNUSED)
 	    XtSetValues(menu->id, args, n);
 	gui_athena_menu_colors(menu->id);
 
-#ifdef FEAT_BEVAL_GUI
+#ifdef FEAT_BEVAL
 	gui_mch_menu_set_tip(menu);
 #endif
 
@@ -1538,7 +1537,7 @@ gui_mch_destroy_menu(vimmenu_T *menu)
 	XtVaGetValues(menu->id,
 		XtNheight,	&height,
 		NULL);
-#if defined(FEAT_TOOLBAR) && defined(FEAT_BEVAL_GUI)
+#if defined(FEAT_TOOLBAR) && defined(FEAT_BEVAL)
 	if (parent == toolBar && menu->tip != NULL)
 	{
 	    /* We try to destroy this before the actual menu, because there are
@@ -1843,7 +1842,7 @@ gui_mch_def_colors(void)
 	gui.menu_bg_pixel = gui_get_color((char_u *)gui.rsrc_menu_bg_name);
 	gui.scroll_fg_pixel = gui_get_color((char_u *)gui.rsrc_scroll_fg_name);
 	gui.scroll_bg_pixel = gui_get_color((char_u *)gui.rsrc_scroll_bg_name);
-#ifdef FEAT_BEVAL_GUI
+#ifdef FEAT_BEVAL
 	gui.tooltip_fg_pixel = gui_get_color((char_u *)gui.rsrc_tooltip_fg_name);
 	gui.tooltip_bg_pixel = gui_get_color((char_u *)gui.rsrc_tooltip_bg_name);
 #endif
@@ -1961,12 +1960,14 @@ gui_mch_create_scrollbar(
 #endif
 }
 
+#if defined(FEAT_WINDOWS) || defined(PROTO)
     void
 gui_mch_destroy_scrollbar(scrollbar_T *sb)
 {
     if (sb->id != (Widget)0)
 	XtDestroyWidget(sb->id);
 }
+#endif
 
     void
 gui_mch_set_scrollbar_colors(scrollbar_T *sb)
