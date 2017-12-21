@@ -8,8 +8,11 @@
 
 
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -18,7 +21,11 @@ endif
 let fortran_free_source=1
 
 " Load FORTRAN syntax file
-runtime! syntax/fortran.vim
+if version < 600
+  source <sfile>:p:h/fortran.vim
+else
+  runtime! syntax/fortran.vim
+endif
 unlet b:current_syntax
 
 
@@ -129,30 +136,40 @@ syn sync match trasysSync grouphere trasysComment "^HEADER DOCUMENTATION DATA"
 
 
 " Define the default highlighting
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_trasys_syntax_inits")
+  if version < 508
+    let did_trasys_syntax_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link trasysOptions		Special
-hi def link trasysSurface		Special
-hi def link trasysSurfaceType	Constant
-hi def link trasysSurfaceArgs	Constant
-hi def link trasysArgs		Constant
-hi def link trasysOperations	Statement
-hi def link trasysSubRoutine	Statement
-hi def link trassyPrcsrSegm	PreProc
-hi def link trasysIdentifier	Identifier
-hi def link trasysComment		Comment
-hi def link trasysHeader		Typedef
-hi def link trasysMacro		Macro
-hi def link trasysInteger		Number
-hi def link trasysFloat		Float
-hi def link trasysScientific	Float
+  HiLink trasysOptions		Special
+  HiLink trasysSurface		Special
+  HiLink trasysSurfaceType	Constant
+  HiLink trasysSurfaceArgs	Constant
+  HiLink trasysArgs		Constant
+  HiLink trasysOperations	Statement
+  HiLink trasysSubRoutine	Statement
+  HiLink trassyPrcsrSegm	PreProc
+  HiLink trasysIdentifier	Identifier
+  HiLink trasysComment		Comment
+  HiLink trasysHeader		Typedef
+  HiLink trasysMacro		Macro
+  HiLink trasysInteger		Number
+  HiLink trasysFloat		Float
+  HiLink trasysScientific	Float
 
-hi def link trasysBlank		SpecialChar
+  HiLink trasysBlank		SpecialChar
 
-hi def link trasysEndData		Macro
+  HiLink trasysEndData		Macro
 
-hi def link trasysTodo		Todo
+  HiLink trasysTodo		Todo
 
+  delcommand HiLink
+endif
 
 
 let b:current_syntax = "trasys"

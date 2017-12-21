@@ -6,8 +6,10 @@
 " Comment:	Icewm is a lightweight window manager.  This adds syntax
 "		highlighting when editing your user's menu file (~/.icewm/menu).
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" clear existing syntax
+if version < 600
+	syntax clear
+elseif exists("b:current_syntax")
 	finish
 endif
 

@@ -274,7 +274,7 @@ function GetRIndent()
         let nlnum = s:Get_prev_line(nlnum)
         let nline = SanitizeRLine(getline(nlnum)) . nline
       endwhile
-      if nline =~ '^\s*function\s*(' && indent(nlnum) == shiftwidth()
+      if nline =~ '^\s*function\s*(' && indent(nlnum) == &sw
         return 0
       endif
     endif
@@ -285,7 +285,7 @@ function GetRIndent()
 
   " line is an incomplete command:
   if line =~ '\<\(if\|while\|for\|function\)\s*()$' || line =~ '\<else$' || line =~ '<-$' || line =~ '->$'
-    return indent(lnum) + shiftwidth()
+    return indent(lnum) + &sw
   endif
 
   " Deal with () and []
@@ -293,14 +293,14 @@ function GetRIndent()
   let pb = s:Get_paren_balance(line, '(', ')')
 
   if line =~ '^\s*{$' || line =~ '(\s*{' || (pb == 0 && (line =~ '{$' || line =~ '(\s*{$'))
-    return indent(lnum) + shiftwidth()
+    return indent(lnum) + &sw
   endif
 
   let s:curtabstop = repeat(' ', &tabstop)
 
   if g:r_indent_align_args == 1
     if pb > 0 && line =~ '{$'
-      return s:Get_last_paren_idx(line, '(', ')', pb) + shiftwidth()
+      return s:Get_last_paren_idx(line, '(', ')', pb) + &sw
     endif
 
     let bb = s:Get_paren_balance(line, '[', ']')
@@ -364,11 +364,11 @@ function GetRIndent()
       if oline =~ g:r_indent_op_pattern && s:Get_paren_balance(line, "(", ")") == 0
         return indent(lnum)
       else
-        return indent(lnum) + shiftwidth()
+        return indent(lnum) + &sw
       endif
     else
       if oline =~ g:r_indent_op_pattern && s:Get_paren_balance(line, "(", ")") == 0
-        return indent(lnum) - shiftwidth()
+        return indent(lnum) - &sw
       endif
     endif
   endif
@@ -383,7 +383,7 @@ function GetRIndent()
       let line = linepiece . line
     endwhile
     if line =~ '{$' && post_block == 0
-      return indent(lnum) + shiftwidth()
+      return indent(lnum) + &sw
     endif
 
     " Now we can do some tests again
@@ -393,19 +393,19 @@ function GetRIndent()
     if post_block == 0
       let newl = SanitizeRLine(line)
       if newl =~ '\<\(if\|while\|for\|function\)\s*()$' || newl =~ '\<else$' || newl =~ '<-$'
-        return indent(lnum) + shiftwidth()
+        return indent(lnum) + &sw
       endif
     endif
   endif
 
   if cline =~ '^\s*else'
     if line =~ '<-\s*if\s*()'
-      return indent(lnum) + shiftwidth()
+      return indent(lnum) + &sw
     else
       if line =~ '\<if\s*()'
         return indent(lnum)
       else
-        return indent(lnum) - shiftwidth()
+        return indent(lnum) - &sw
       endif
     endif
   endif
@@ -474,12 +474,12 @@ function GetRIndent()
   let ind = indent(lnum)
 
   if g:r_indent_align_args == 0 && pb != 0
-    let ind += pb * shiftwidth()
+    let ind += pb * &sw
     return ind
   endif
 
   if g:r_indent_align_args == 0 && bb != 0
-    let ind += bb * shiftwidth()
+    let ind += bb * &sw
     return ind
   endif
 
@@ -489,7 +489,7 @@ function GetRIndent()
     let pind = 0
   endif
 
-  if ind == pind || (ind == (pind  + shiftwidth()) && pline =~ '{$' && ppost_else == 0)
+  if ind == pind || (ind == (pind  + &sw) && pline =~ '{$' && ppost_else == 0)
     return ind
   endif
 
@@ -509,7 +509,7 @@ function GetRIndent()
       let pbb = s:Get_paren_balance(pline, '[', ']')
     endwhile
     let pind = indent(plnum)
-    if ind == (pind  + shiftwidth()) && pline =~ '{$'
+    if ind == (pind  + &sw) && pline =~ '{$'
       return ind
     endif
   endwhile

@@ -15,8 +15,11 @@
 "		Vim is Charityware, see ":help Uganda"
 "
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax") || &compatible
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+    syntax clear
+elseif exists("b:current_syntax") || &compatible
     finish
 endif
 

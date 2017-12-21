@@ -7,8 +7,13 @@
 " Filetypes:	*.rf *.frt
 " NOTE: 	You should also have the ftplugin/reva.vim file to set 'isk'
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items and don't load
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+  echo "Reva syntax file requires version 6.0 or later of vim!"
+  finish
+elseif exists("b:current_syntax")
    finish
 endif
 

@@ -4,8 +4,11 @@
 " Last Change:	2003 Aug 14
 " Author:	Sonia Heimann
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -30,24 +33,34 @@ syn region procmailActionNested start=+^\s*{+ end=+^\s*}+ contains=procmailRecip
 syn region procmailRecipe start=+^\s*:.*$+ end=+^\s*\($\|}\)+me=e-1 contains=procmailComment,procmailCondition,procmailActionFolder,procmailActionVariable,procmailActionForward,procmailActionPipe,procmailActionNested,procmailVarDeclRegion
 
 " Define the default highlighting.
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_procmail_syntax_inits")
+  if version < 508
+    let did_procmail_syntax_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link procmailComment Comment
-hi def link procmailTodo    Todo
+  HiLink procmailComment Comment
+  HiLink procmailTodo    Todo
 
-hi def link procmailRecipe   Statement
-"hi def link procmailCondition   Statement
+  HiLink procmailRecipe   Statement
+  "HiLink procmailCondition   Statement
 
-hi def link procmailActionFolder	procmailAction
-hi def link procmailActionVariable procmailAction
-hi def link procmailActionForward	procmailAction
-hi def link procmailActionPipe	procmailAction
-hi def link procmailAction		Function
-hi def link procmailVar		Identifier
-hi def link procmailVarDecl	Identifier
+  HiLink procmailActionFolder	procmailAction
+  HiLink procmailActionVariable procmailAction
+  HiLink procmailActionForward	procmailAction
+  HiLink procmailActionPipe	procmailAction
+  HiLink procmailAction		Function
+  HiLink procmailVar		Identifier
+  HiLink procmailVarDecl	Identifier
 
-hi def link procmailString String
+  HiLink procmailString String
 
+  delcommand HiLink
+endif
 
 let b:current_syntax = "procmail"
 

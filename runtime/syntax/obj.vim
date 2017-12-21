@@ -4,8 +4,11 @@
 " File Types:	.obj (used in 3D)
 " Last Change:  2010 May 18
 "
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -59,24 +62,34 @@ syn match       objInt          "\d\+"
 syn match       objIndex        "\d\+\/\d*\/\d*"
 
 " Define the default highlighting.
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_cabal_syn_inits")
+  if version < 508
+    let did_cabal_syn_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link objError           Error
-hi def link objComment         Comment
-hi def link objInclude         PreProc
-hi def link objFloat           Float
-hi def link objInt             Number
-hi def link objGroup           Structure
-hi def link objIndex           Constant
-hi def link objMaterial        Label
+  HiLink objError           Error
+  HiLink objComment         Comment
+  HiLink objInclude         PreProc
+  HiLink objFloat           Float
+  HiLink objInt             Number
+  HiLink objGroup           Structure
+  HiLink objIndex           Constant
+  HiLink objMaterial        Label
 
-hi def link objVertex          Keyword
-hi def link objNormale         Keyword
-hi def link objVertice         Keyword
-hi def link objFace            Keyword
-hi def link objKeywords        Keyword
+  HiLink objVertex          Keyword
+  HiLink objNormale         Keyword
+  HiLink objVertice         Keyword
+  HiLink objFace            Keyword
+  HiLink objKeywords        Keyword
 
 
+  delcommand HiLink
+endif
 
 let b:current_syntax = "obj"
 

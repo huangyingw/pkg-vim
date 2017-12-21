@@ -8,8 +8,11 @@
 "		the purposes of Design Rule Checking, Layout vs. Schematic
 "		verification, and Layout Parameter Extraction.
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -58,14 +61,24 @@ syn match   draculaPreProc "^#.*"
 syn sync lines=50
 
 " Define the default highlighting.
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_dracula_syn_inits")
+  if version < 508
+    let did_dracula_syn_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link draculaIdentifier Identifier
-hi def link draculaStatement  Statement
-hi def link draculaType       Type
-hi def link draculaComment    Comment
-hi def link draculaPreProc    PreProc
+  HiLink draculaIdentifier Identifier
+  HiLink draculaStatement  Statement
+  HiLink draculaType       Type
+  HiLink draculaComment    Comment
+  HiLink draculaPreProc    PreProc
 
+  delcommand HiLink
+endif
 
 let b:current_syntax = "dracula"
 

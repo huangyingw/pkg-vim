@@ -1,15 +1,17 @@
 " Vim syntax file
 " Language:	X Pixmap v2
 " Maintainer:	Steve Wall (hitched97@velnet.com)
-" Last Change:	2017 Feb 01
+" Last Change:	2012 Jun 01
 " 		(Dominique Pelle added @Spell)
 " Version:	5.8
-"               Jemma Nelson added termguicolors support
 "
 " Made from xpm.vim by Ronald Schild <rs@scutum.de>
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -21,9 +23,15 @@ syn keyword xpm2Todo		TODO FIXME XXX  contained
 syn match   xpm2Comment		"\!.*$"  contains=@Spell,xpm2Todo
 
 
-command -nargs=+ Hi hi def <args>
+if version < 508
+  command -nargs=+ HiLink hi link <args>
+  command -nargs=+ Hi hi <args>
+else
+  command -nargs=+ HiLink hi def link <args>
+  command -nargs=+ Hi hi def <args>
+endif
 
-if has("gui_running") || has("termguicolors") && &termguicolors
+if has("gui_running")
 
   let color  = ""
   let chars  = ""
@@ -55,7 +63,7 @@ if has("gui_running") || has("termguicolors") && &termguicolors
 	if s !~ '/'
 	  exe 'syn match xpm2Values /' . s . '/'
 	endif
-	hi def link xpm2Values Statement
+	HiLink xpm2Values Statement
 
 	let n = 1			" n = color index
 
@@ -104,11 +112,11 @@ if has("gui_running") || has("termguicolors") && &termguicolors
 	" now create syntax items
 	" highlight the color string as normal string (no pixel string)
 	exe 'syn match xpm2Col'.n.'Def /'.s.'/ contains=xpm2Col'.n.'inDef'
-	exe 'hi def link xpm2Col'.n.'Def Constant'
+	exe 'HiLink xpm2Col'.n.'Def Constant'
 
 	" but highlight the first whitespace after chars in its color
 	exe 'syn match xpm2Col'.n.'inDef /^'.chars.'/hs=s+'.(cpp).' contained'
-	exe 'hi def link xpm2Col'.n.'inDef xpm2Color'.n
+	exe 'HiLink xpm2Col'.n.'inDef xpm2Color'.n
 
 	" remove the following whitespace from chars
 	let chars = substitute(chars, '\\s\\+$', '', '')
@@ -133,17 +141,24 @@ if has("gui_running") || has("termguicolors") && &termguicolors
 
   unlet color chars colors cpp n i s
 
-endif          " has("gui_running") || has("termguicolors") && &termguicolors
+endif		" has("gui_running")
 
 " Define the default highlighting.
-" Only when an item doesn't have highlighting yet
-" The default highlighting.
-hi def link xpm2Type		Type
-hi def link xpm2StorageClass	StorageClass
-hi def link xpm2Todo		Todo
-hi def link xpm2Comment		Comment
-hi def link xpm2PixelString	String
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_xpm2_syntax_inits")
+  if version < 508
+    let did_xpm2_syntax_inits = 1
+  endif
 
+  " The default highlighting.
+  HiLink xpm2Type		Type
+  HiLink xpm2StorageClass	StorageClass
+  HiLink xpm2Todo		Todo
+  HiLink xpm2Comment		Comment
+  HiLink xpm2PixelString	String
+endif
+delcommand HiLink
 delcommand Hi
 
 let b:current_syntax = "xpm2"

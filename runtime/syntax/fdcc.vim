@@ -4,8 +4,11 @@
 " Last Change:	2004 May 16
 " Remarks:      FDCC (Formal Definitions of Cultural Conventions) see ISO TR 14652
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -55,46 +58,56 @@ syn region fdccBlank matchgroup=fdccLCName start=/^LC_NAME$/ end=/^END LC_NAME$/
 syn region fdccBlank matchgroup=fdccLCAddress start=/^LC_ADDRESS$/ end=/^END LC_ADDRESS$/ contains=fdccKeywordAddress,fdccString,fdccComment,fdccNumber
 
 
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_fdcc_syn_inits")
+  if version < 508
+    let did_fdcc_syn_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link fdccBlank		 Blank
+  HiLink fdccBlank		 Blank
 
-hi def link fdccTodo		 Todo
-hi def link fdccComment		 Comment
-hi def link fdccVariable		 Type
+  HiLink fdccTodo		 Todo
+  HiLink fdccComment		 Comment
+  HiLink fdccVariable		 Type
 
-hi def link fdccLCIdentification	 Statement
-hi def link fdccLCCtype		 Statement
-hi def link fdccLCCollate		 Statement
-hi def link fdccLCMonetary		 Statement
-hi def link fdccLCNumeric		 Statement
-hi def link fdccLCTime		 Statement
-hi def link fdccLCMessages		 Statement
-hi def link fdccLCPaper		 Statement
-hi def link fdccLCTelephone	 Statement
-hi def link fdccLCMeasurement	 Statement
-hi def link fdccLCName		 Statement
-hi def link fdccLCAddress		 Statement
+  HiLink fdccLCIdentification	 Statement
+  HiLink fdccLCCtype		 Statement
+  HiLink fdccLCCollate		 Statement
+  HiLink fdccLCMonetary		 Statement
+  HiLink fdccLCNumeric		 Statement
+  HiLink fdccLCTime		 Statement
+  HiLink fdccLCMessages		 Statement
+  HiLink fdccLCPaper		 Statement
+  HiLink fdccLCTelephone	 Statement
+  HiLink fdccLCMeasurement	 Statement
+  HiLink fdccLCName		 Statement
+  HiLink fdccLCAddress		 Statement
 
-hi def link fdccUnicodeInValid	 Error
-hi def link fdccUnicodeValid	 String
-hi def link fdccString		 String
-hi def link fdccNumber		 Blank
+  HiLink fdccUnicodeInValid	 Error
+  HiLink fdccUnicodeValid	 String
+  HiLink fdccString		 String
+  HiLink fdccNumber		 Blank
 
-hi def link fdccKeywordIdentification fdccKeyword
-hi def link fdccKeywordCtype	   fdccKeyword
-hi def link fdccKeywordCollate	   fdccKeyword
-hi def link fdccKeywordMonetary	   fdccKeyword
-hi def link fdccKeywordNumeric	   fdccKeyword
-hi def link fdccKeywordTime	   fdccKeyword
-hi def link fdccKeywordMessages	   fdccKeyword
-hi def link fdccKeywordPaper	   fdccKeyword
-hi def link fdccKeywordTelephone	   fdccKeyword
-hi def link fdccKeywordMeasurement    fdccKeyword
-hi def link fdccKeywordName	   fdccKeyword
-hi def link fdccKeywordAddress	   fdccKeyword
-hi def link fdccKeyword		   Identifier
+  HiLink fdccKeywordIdentification fdccKeyword
+  HiLink fdccKeywordCtype	   fdccKeyword
+  HiLink fdccKeywordCollate	   fdccKeyword
+  HiLink fdccKeywordMonetary	   fdccKeyword
+  HiLink fdccKeywordNumeric	   fdccKeyword
+  HiLink fdccKeywordTime	   fdccKeyword
+  HiLink fdccKeywordMessages	   fdccKeyword
+  HiLink fdccKeywordPaper	   fdccKeyword
+  HiLink fdccKeywordTelephone	   fdccKeyword
+  HiLink fdccKeywordMeasurement    fdccKeyword
+  HiLink fdccKeywordName	   fdccKeyword
+  HiLink fdccKeywordAddress	   fdccKeyword
+  HiLink fdccKeyword		   Identifier
 
+  delcommand HiLink
+endif
 
 let b:current_syntax = "fdcc"
 

@@ -9,13 +9,20 @@
 " hacked out of the Zope Quick Reference in case someone finds something
 " sensible to do with them. I certainly haven't.
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
 " First load the HTML syntax
-runtime! syntax/html.vim
+if version < 600
+  source <sfile>:p:h/html.vim
+else
+  runtime! syntax/html.vim
+endif
 
 syn case match
 
@@ -189,15 +196,25 @@ syn match   htmlTagN     contained +<\s*[-a-zA-Z0-9]\++hs=s+1 contains=htmlTagNa
 syn match   htmlTagN     contained +</\s*[-a-zA-Z0-9]\++hs=s+2 contains=htmlTagName,htmlSpecialTagName,dtmlIsTag,dtmlAttribute,dtmlMethod,@htmlTagNameCluster
 
 " Define the default highlighting.
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_dtml_syntax_inits")
+  if version < 508
+    let did_dtml_syntax_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link dtmlIsTag			PreProc
-hi def link dtmlAttribute		Identifier
-hi def link dtmlMethod			Function
-hi def link dtmlComment		Comment
-hi def link dtmlTODO			Todo
-hi def link dtmlSpecialChar    Special
+  HiLink dtmlIsTag			PreProc
+  HiLink dtmlAttribute		Identifier
+  HiLink dtmlMethod			Function
+  HiLink dtmlComment		Comment
+  HiLink dtmlTODO			Todo
+  HiLink dtmlSpecialChar    Special
 
+  delcommand HiLink
+endif
 
 let b:current_syntax = "dtml"
 

@@ -9,8 +9,11 @@
 "		    of [], in order to avoid -read highlighted,
 "		    or [quote] strings highlighted
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -120,25 +123,35 @@ syn region amlSkip matchgroup=amlOutput start="&typ" end="$" contains=amlVar
 syn region amlSkip matchgroup=amlOutput start="&type" end="$" contains=amlVar
 
 " Define the default highlighting.
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_aml_syntax_inits")
+  if version < 508
+    let did_aml_syntax_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link amlComment	Comment
-hi def link amlNumber	Number
-hi def link amlQuote	String
-hi def link amlVar	Identifier
-hi def link amlVar2	Identifier
-hi def link amlFunction	PreProc
-hi def link amlDir	Statement
-hi def link amlDir2	Statement
-hi def link amlDirSym	Statement
-hi def link amlOutput	Statement
-hi def link amlArcCmd	ModeMsg
-hi def link amlFormedCmd	amlArcCmd
-hi def link amlTabCmd	amlArcCmd
-hi def link amlInfoCmd	amlArcCmd
-hi def link amlVtrCmd	amlArcCmd
-hi def link amlFormed	amlArcCmd
-hi def link amlTab	amlArcCmd
+  HiLink amlComment	Comment
+  HiLink amlNumber	Number
+  HiLink amlQuote	String
+  HiLink amlVar	Identifier
+  HiLink amlVar2	Identifier
+  HiLink amlFunction	PreProc
+  HiLink amlDir	Statement
+  HiLink amlDir2	Statement
+  HiLink amlDirSym	Statement
+  HiLink amlOutput	Statement
+  HiLink amlArcCmd	ModeMsg
+  HiLink amlFormedCmd	amlArcCmd
+  HiLink amlTabCmd	amlArcCmd
+  HiLink amlInfoCmd	amlArcCmd
+  HiLink amlVtrCmd	amlArcCmd
+  HiLink amlFormed	amlArcCmd
+  HiLink amlTab	amlArcCmd
 
+  delcommand HiLink
+endif
 
 let b:current_syntax = "aml"

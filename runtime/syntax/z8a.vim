@@ -3,8 +3,11 @@
 " Maintainer:	Milan Pikula <www@fornax.elf.stuba.sk>
 " Last Change:	2003 May 11
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -82,20 +85,30 @@ syn match z8aComment		";.*"
 syn case match
 
 " Define the default highlighting.
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_z8a_syntax_inits")
+  if version < 508
+    let did_z8a_syntax_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link z8aSection		Special
-hi def link z8aLabel		Label
-hi def link z8aSpecialLabel	Label
-hi def link z8aComment		Comment
-hi def link z8aInstruction	Statement
-hi def link z8aSpecInst		Statement
-hi def link z8aInclude		Include
-hi def link z8aPreCondit		PreCondit
-hi def link z8aPreProc		PreProc
-hi def link z8aNumber		Number
-hi def link z8aString		String
+  HiLink z8aSection		Special
+  HiLink z8aLabel		Label
+  HiLink z8aSpecialLabel	Label
+  HiLink z8aComment		Comment
+  HiLink z8aInstruction	Statement
+  HiLink z8aSpecInst		Statement
+  HiLink z8aInclude		Include
+  HiLink z8aPreCondit		PreCondit
+  HiLink z8aPreProc		PreProc
+  HiLink z8aNumber		Number
+  HiLink z8aString		String
 
+  delcommand HiLink
+endif
 
 let b:current_syntax = "z8a"
 " vim: ts=8

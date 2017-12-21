@@ -16,14 +16,21 @@
 "  vim-package around your corner :)
 
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syn clear
+elseif exists("b:current_syntax")
   finish
 endif
 
 
 " A lot of the web stuff looks like HTML so we load that first
-runtime! syntax/html.vim
+if version < 600
+  so <sfile>:p:h/html.vim
+else
+  runtime! syntax/html.vim
+endif
 unlet b:current_syntax
 
 if !exists("main_syntax")
@@ -101,7 +108,11 @@ syn region  htmlTagName    start="\<\(define-tag\|define-region\)" end="\>" cont
 " The perl include stuff
 if main_syntax != 'perl'
   " Perl script
-  syn include @wmlPerlScript syntax/perl.vim
+  if version < 600
+    syn include @wmlPerlScript <sfile>:p:h/perl.vim
+  else
+    syn include @wmlPerlScript syntax/perl.vim
+  endif
   unlet b:current_syntax
 
   syn region perlScript   start=+<perl>+ keepend end=+</perl>+ contains=@wmlPerlScript,wmlPerlTag
@@ -129,22 +140,33 @@ if main_syntax == "html"
 endif
 
 " Define the default highlighting.
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_wml_syn_inits")
+  let did_wml_syn_inits = 1
+  if version < 508
+    let did_wml_syn_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link wmlNextLine	Special
-hi def link wmlUse		Include
-hi def link wmlUsed	String
-hi def link wmlBody	Special
-hi def link wmlDiverted	Label
-hi def link wmlDivert	Delimiter
-hi def link wmlDivertEnd	Delimiter
-hi def link wmlLocationId	Label
-hi def link wmlLocation	Delimiter
-" hi def link wmlLocationed	Delimiter
-hi def link wmlDefineName	String
-hi def link wmlComment	Comment
-hi def link wmlInclude	Include
-hi def link wmlSharpBang	PreProc
+  HiLink wmlNextLine	Special
+  HiLink wmlUse		Include
+  HiLink wmlUsed	String
+  HiLink wmlBody	Special
+  HiLink wmlDiverted	Label
+  HiLink wmlDivert	Delimiter
+  HiLink wmlDivertEnd	Delimiter
+  HiLink wmlLocationId	Label
+  HiLink wmlLocation	Delimiter
+" HiLink wmlLocationed	Delimiter
+  HiLink wmlDefineName	String
+  HiLink wmlComment	Comment
+  HiLink wmlInclude	Include
+  HiLink wmlSharpBang	PreProc
 
+  delcommand HiLink
+endif
 
 let b:current_syntax = "wml"

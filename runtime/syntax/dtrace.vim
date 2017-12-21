@@ -10,14 +10,19 @@
 " http://src.opensolaris.org/source/xref/onnv/onnv-gate/usr/src/lib/libdtrace/common/dt_lex.l
 " http://src.opensolaris.org/source/xref/onnv/onnv-gate/usr/src/lib/libdtrace/common/dt_grammar.y
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
 " Read the C syntax to start with
-runtime! syntax/c.vim
-unlet b:current_syntax
+if version < 600
+  so <sfile>:p:h/c.vim
+else
+  runtime! syntax/c.vim
+  unlet b:current_syntax
+endif
 
 syn clear cCommentL  " dtrace doesn't support // style comments
 

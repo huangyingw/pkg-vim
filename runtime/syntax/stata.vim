@@ -12,8 +12,9 @@
 " 26apr2006	fixed brace confusion in stataErrInParen and stataErrInBracket
 "		fixed paren/bracket confusion in stataFuncGroup
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+if version < 600
+	syntax clear
+elseif exists("b:current_syntax")
 	finish
 endif
 

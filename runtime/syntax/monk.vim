@@ -21,8 +21,11 @@
 
 " Initializing:
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -57,7 +60,11 @@ syn region monkUnquote matchgroup=Delimiter start=",@#(" end=")" contains=ALLBUT
 
 " R5RS Scheme Functions and Syntax:
 
-setlocal iskeyword=33,35-39,42-58,60-90,94,95,97-122,126,_
+if version < 600
+  set iskeyword=33,35-39,42-58,60-90,94,95,97-122,126,_
+else
+  setlocal iskeyword=33,35-39,42-58,60-90,94,95,97-122,126,_
+endif
 
 syn keyword monkSyntax lambda and or if cond case define let let* letrec
 syn keyword monkSyntax begin do delay set! else =>
@@ -194,22 +201,32 @@ syn sync match matchPlace grouphere NONE "^[^ \t]"
 " ... i.e. synchronize on a line that starts at the left margin
 
 " Define the default highlighting.
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_monk_syntax_inits")
+  if version < 508
+    let did_monk_syntax_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link monkSyntax		Statement
-hi def link monkFunc		Function
+  HiLink monkSyntax		Statement
+  HiLink monkFunc		Function
 
-hi def link monkString		String
-hi def link monkChar		Character
-hi def link monkNumber		Number
-hi def link monkBoolean		Boolean
+  HiLink monkString		String
+  HiLink monkChar		Character
+  HiLink monkNumber		Number
+  HiLink monkBoolean		Boolean
 
-hi def link monkDelimiter	Delimiter
-hi def link monkConstant	Constant
+  HiLink monkDelimiter	Delimiter
+  HiLink monkConstant	Constant
 
-hi def link monkComment		Comment
-hi def link monkError		Error
+  HiLink monkComment		Comment
+  HiLink monkError		Error
 
+  delcommand HiLink
+endif
 
 let b:current_syntax = "monk"
 

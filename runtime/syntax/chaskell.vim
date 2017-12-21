@@ -9,6 +9,10 @@
 let b:hs_chs=1
 
 " Include standard Haskell highlighting
-runtime! syntax/haskell.vim
+if version < 600
+  source <sfile>:p:h/haskell.vim
+else
+  runtime! syntax/haskell.vim
+endif
 
 " vim: ts=8

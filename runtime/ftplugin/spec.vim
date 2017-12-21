@@ -36,11 +36,10 @@ except ImportError:
 else:
     specfile = vim.current.buffer.name
     if specfile:
-        rpm.delMacro("dist")
         spec = rpm.spec(specfile)
-        headers = spec.sourceHeader
-        version = headers["Version"]
-        release = headers["Release"]
+        headers = spec.packages[0].header
+        version = headers['Version']
+        release = ".".join(headers['Release'].split(".")[:-1])
         vim.command("let ver = " + version)
         vim.command("let rel = " + release)
 PYEND
@@ -114,10 +113,7 @@ if !exists("*s:SpecChangelog")
 			endif
 		endif
 		if (chgline != -1)
-			let tmptime = v:lc_time
-			language time C
 			let parsed_format = "* ".strftime(format)." - ".ver."-".rel
-			execute "language time" tmptime
 			let release_info = "+ ".name."-".ver."-".rel
 			let wrong_format = 0
 			let wrong_release = 0
@@ -183,8 +179,12 @@ if !exists("*s:ParseRpmVars")
 		endif
 		let varname = strpart(a:str, start+2, end-(start+2))
 		execute a:strline
-		let definestr = "^[ \t]*%(?:global|define)[ \t]\\+" . varname . "[ \t]\\+\\(.*\\)$"
+		let definestr = "^[ \t]*%define[ \t]\\+" . varname . "[ \t]\\+\\(.*\\)$"
 		let linenum = search(definestr, "bW")
+		if (linenum == 0)
+			let definestr = substitute(definestr, "%define", "%global", "")
+			let linenum = search(definestr, "bW")
+		endif
 		if (linenum != -1)
 			let ret = ret .  substitute(getline(linenum), definestr, "\\1", "")
 		else
@@ -201,7 +201,7 @@ endif
 
 let b:match_ignorecase = 0
 let b:match_words =
-  \ '^Name:^%description:^%clean:^%(?:auto)?setup:^%build:^%install:^%files:' .
+  \ '^Name:^%description:^%clean:^%setup:^%build:^%install:^%files:' .
   \ '^%package:^%preun:^%postun:^%changelog'
 
 let &cpo = s:cpo_save

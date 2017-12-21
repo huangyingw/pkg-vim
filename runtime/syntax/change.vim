@@ -7,8 +7,11 @@
 " in the articles by Donald E. Knuth and Silvio Levy cited in "web.vim" and
 " "cweb.vim" respectively.
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syn clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -18,11 +21,21 @@ syn region changeFromMaterial start="^@x.*$"ms=e+1 end="^@y.*$"me=s-1
 syn region changeToMaterial start="^@y.*$"ms=e+1 end="^@z.*$"me=s-1
 
 " Define the default highlighting.
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_change_syntax_inits")
+  if version < 508
+    let did_change_syntax_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link changeFromMaterial String
-hi def link changeToMaterial Statement
+  HiLink changeFromMaterial String
+  HiLink changeToMaterial Statement
 
+  delcommand HiLink
+endif
 
 let b:current_syntax = "change"
 

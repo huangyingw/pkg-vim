@@ -8,8 +8,11 @@
 
 
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -53,20 +56,30 @@ syn match  tssopScientific  "-\=\<[0-9]*\.[0-9]*E[-+]\=[0-9]\+\>"
 
 
 " Define the default highlighting
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_tssop_syntax_inits")
+  if version < 508
+    let did_tssop_syntax_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link tssopParam		Statement
-hi def link tssopProp		Identifier
-hi def link tssopArgs		Special
+  HiLink tssopParam		Statement
+  HiLink tssopProp		Identifier
+  HiLink tssopArgs		Special
 
-hi def link tssopComment		Statement
-hi def link tssopCommentString	Comment
-hi def link tssopPropName		Typedef
+  HiLink tssopComment		Statement
+  HiLink tssopCommentString	Comment
+  HiLink tssopPropName		Typedef
 
-hi def link tssopInteger		Number
-hi def link tssopFloat		Float
-hi def link tssopScientific	Float
+  HiLink tssopInteger		Number
+  HiLink tssopFloat		Float
+  HiLink tssopScientific	Float
 
+  delcommand HiLink
+endif
 
 
 let b:current_syntax = "tssop"

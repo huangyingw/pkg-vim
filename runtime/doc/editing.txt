@@ -1,4 +1,4 @@
-*editing.txt*   For Vim version 8.0.  Last change: 2017 Nov 16
+*editing.txt*   For Vim version 7.4.  Last change: 2016 Mar 28
 
 
 		  VIM REFERENCE MANUAL    by Bram Moolenaar
@@ -181,8 +181,7 @@ start editing another file, Vim will refuse this.  In order to overrule this
 protection, add a '!' to the command.  The changes will then be lost.  For
 example: ":q" will not work if the buffer was changed, but ":q!" will.  To see
 whether the buffer was changed use the "CTRL-G" command.  The message includes
-the string "[Modified]" if the buffer has been changed, or "+" if the 'm' flag
-is in 'shortmess'.
+the string "[Modified]" if the buffer has been changed.
 
 If you want to automatically save the changes without asking, switch on the
 'autowriteall' option.  'autowrite' is the associated Vi-compatible option
@@ -276,7 +275,7 @@ If you want to keep the changed buffer without saving it, switch on the
 
 							*:vie* *:view*
 :vie[w][!] [++opt] [+cmd] file
-			When used in Ex mode: Leave |Ex-mode|, go back to
+			When used in Ex mode: Leave |Ex mode|, go back to
 			Normal mode.  Otherwise same as |:edit|, but set
 			'readonly' option for this buffer.  {not in Vi}
 
@@ -617,16 +616,16 @@ list of the current window.
 			Also see |++opt| and |+cmd|.
 			{Vi: no ++opt}
 
-:[count]arge[dit][!] [++opt] [+cmd] {name} ..		*:arge* *:argedit*
-			Add {name}s to the argument list and edit it.
+:[count]arge[dit][!] [++opt] [+cmd] {name}		*:arge* *:argedit*
+			Add {name} to the argument list and edit it.
 			When {name} already exists in the argument list, this
 			entry is edited.
 			This is like using |:argadd| and then |:edit|.
-			Spaces in filenames have to be escaped with "\".
+			Note that only one file name is allowed, and spaces
+			inside the file name are allowed, like with |:edit|.
 			[count] is used like with |:argadd|.
-			If the current file cannot be |abandon|ed {name}s will
-			still be added to the argument list, but won't be
-			edited. No check for duplicates is done.
+			[!] is required if the current file cannot be
+			|abandon|ed.
 			Also see |++opt| and |+cmd|.
 			{not in Vi}
 
@@ -900,7 +899,7 @@ Note: When the 'write' option is off, you are not able to write any file.
 
 							*:w* *:write*
 						*E502* *E503* *E504* *E505*
-						*E512* *E514* *E667* *E796* *E949*
+						*E512* *E514* *E667* *E796*
 :w[rite] [++opt]	Write the whole buffer to the current file.  This is
 			the normal way to save changes to a file.  It fails
 			when the 'readonly' option is set or when there is
@@ -956,9 +955,6 @@ used, for example, when the write fails and you want to try again later with
 ":w #".  This can be switched off by removing the 'A' flag from the
 'cpoptions' option.
 
-Note that the 'fsync' option matters here.  If it's set it may make writes
-slower (but safer).
-
 							*:sav* *:saveas*
 :sav[eas][!] [++opt] {file}
 			Save the current buffer under the name {file} and set
@@ -980,12 +976,12 @@ WRITING WITH MULTIPLE BUFFERS				*buffer-write*
 
 							*:wa* *:wall*
 :wa[ll]			Write all changed buffers.  Buffers without a file
-			name cause an error message.  Buffers which are
-			readonly are not written. {not in Vi}
+			name or which are readonly are not written. {not in
+			Vi}
 
 :wa[ll]!		Write all changed buffers, even the ones that are
 			readonly.  Buffers without a file name are not
-			written and cause an error message. {not in Vi}
+			written. {not in Vi}
 
 
 Vim will warn you if you try to overwrite a file that has been changed
@@ -1112,19 +1108,16 @@ The names can be in upper- or lowercase.
 			window in the current tab page the current tab page is
 			closed |tab-page|.
 			Triggers the |QuitPre| autocommand event.
-			See |CTRL-W_q| for quitting another window.
 
 :conf[irm] q[uit]	Quit, but give prompt when changes have been made, or
 			the last file in the argument list has not been
 			edited.  See |:confirm| and 'confirm'.  {not in Vi}
 
 :q[uit]!		Quit without writing, also when the current buffer has
-			changes.  The buffer is unloaded, also when it has
-			'hidden' set.
-			If this is the last window and there is a modified
-			hidden buffer, the current buffer is abandoned and the
-			first changed hidden buffer becomes the current
-			buffer.
+			changes.  If this is the last window and there is a
+			modified hidden buffer, the current buffer is
+			abandoned and the first changed hidden buffer becomes
+			the current buffer.
 			Use ":qall!" to exit always.
 
 :cq[uit]		Quit always, without writing, and return an error
@@ -1228,7 +1221,7 @@ Examples: >
 
 If you want to always use ":confirm", set the 'confirm' option.
 
-			*:browse* *:bro* *E338* *E614* *E615* *E616*
+			*:browse* *:bro* *E338* *E614* *E615* *E616* *E578*
 :bro[wse] {command}	Open a file selection dialog for an argument to
 			{command}.  At present this works for |:e|, |:w|,
 			|:wall|, |:wq|, |:wqall|, |:x|, |:xall|, |:exit|,
@@ -1332,11 +1325,9 @@ present in 'cpoptions' and "!" is not used in the command.
 :chd[ir][!] [path]	Same as |:cd|.
 
 							*:lc* *:lcd*
-:lc[d][!] {path}	Like |:cd|, but only set the current directory when
-			the cursor is in the current window.  The current
-			directory for other windows is not changed, switching
-			to another window will stop using {path}.
-			{not in Vi}
+:lc[d][!] {path}	Like |:cd|, but only set the current directory for the
+			current window.  The current directory for other
+			windows is not changed. {not in Vi}
 
 							*:lch* *:lchdir*
 :lch[dir][!]		Same as |:lcd|. {not in Vi}
@@ -1564,13 +1555,6 @@ If you want to automatically reload a file when it has been changed outside of
 Vim, set the 'autoread' option.  This doesn't work at the moment you write the
 file though, only when the file wasn't changed inside of Vim.
 
-If you do not want to be asked or automatically reload the file, you can use
-this: >
-	set buftype=nofile
-
-Or, when starting gvim from a shell: >
-	gvim file.log -c "set buftype=nofile"
-
 Note that if a FileChangedShell autocommand is defined you will not get a
 warning message or prompt.  The autocommand is expected to handle this.
 
@@ -1741,7 +1725,7 @@ There are three different types of searching:
    This searches the same directories, but in a different order.
 
    Note that completion for ":find", ":sfind", and ":tabfind" commands do not
-   currently work with 'path' items that contain a URL or use the double star
+   currently work with 'path' items that contain a url or use the double star
    with depth limiter (/usr/**2) or upward search (;) notations.
 
  vim:tw=78:ts=8:ft=help:norl:

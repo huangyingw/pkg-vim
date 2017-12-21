@@ -5,9 +5,12 @@
 " URI: http://physics.muni.cz/~yeti/download/syntax/fvwmm4.vim
 
 " Setup
-" quit when a syntax file was already loaded
-if exists('b:current_syntax')
-  finish
+if version >= 600
+  if exists('b:current_syntax')
+    finish
+  endif
+else
+  syntax clear
 endif
 
 " Let included files know they are included
@@ -16,11 +19,19 @@ if !exists('main_syntax')
 endif
 
 " Include M4 syntax
-runtime! syntax/m4.vim
+if version >= 600
+  runtime! syntax/m4.vim
+else
+  so <sfile>:p:h/m4.vim
+endif
 unlet b:current_syntax
 
 " Include Fvwm2 syntax (Fvwm1 doesn't have M4 preprocessor)
-runtime! syntax/fvwm.vim
+if version >= 600
+  runtime! syntax/fvwm.vim
+else
+  so <sfile>:p:h/fvwm.vim
+endif
 unlet b:current_syntax
 
 " That's all!

@@ -5,8 +5,11 @@
 " URL:		http://galeb.etf.bg.ac.yu/~alexa/vim/syntax/pic.vim
 " Revision:     1.01
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -88,26 +91,36 @@ syn match picDirective   "#\=DEFINE"
 
 
 " Define the default highlighting.
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_pic16f84_syntax_inits")
+  if version < 508
+    let did_pic16f84_syntax_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link picTodo		Todo
-hi def link picComment		Comment
-hi def link picDirective		Statement
-hi def link picLabel		Label
-hi def link picString		String
+  HiLink picTodo		Todo
+  HiLink picComment		Comment
+  HiLink picDirective		Statement
+  HiLink picLabel		Label
+  HiLink picString		String
 
-"hi def link picOpcode		Keyword
-"hi def link picRegister		Structure
-"hi def link picRegisterPart	Special
+ "HiLink picOpcode		Keyword
+ "HiLink picRegister		Structure
+ "HiLink picRegisterPart	Special
 
-hi def link picASCII		String
-hi def link picBinary		Number
-hi def link picDecimal		Number
-hi def link picHexadecimal		Number
-hi def link picOctal		Number
+  HiLink picASCII		String
+  HiLink picBinary		Number
+  HiLink picDecimal		Number
+  HiLink picHexadecimal		Number
+  HiLink picOctal		Number
 
-hi def link picIdentifier		Identifier
+  HiLink picIdentifier		Identifier
 
+  delcommand HiLink
+endif
 
 let b:current_syntax = "pic"
 

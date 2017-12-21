@@ -3,9 +3,12 @@
 " Maintainer:	Yann Amar <quidame@poivron.org>
 " Last Change:	2015 Dec 22
 
-" quit when a syntax file was already loaded
+" For version 5.x: Clear all syntax items
+" For version 6.x and 7.x: Quit when a syntax file was already loaded
 if !exists("main_syntax")
-  if exists("b:current_syntax")
+  if version < 600
+    syntax clear
+  elseif exists("b:current_syntax")
     finish
   endif
   let main_syntax = 'aptconf'

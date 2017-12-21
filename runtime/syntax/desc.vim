@@ -3,8 +3,11 @@
 " Maintainer:	René Rebe <rene@exactcode.de>, Piotr Esden-Tempski <esden@rocklinux.org>
 " Last Change:	2006 Aug 14
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -60,29 +63,40 @@ syn region descTagRegion start=/^\[\(F\|FLAG\)\]/ end=/$/ contains=descTag,descF
 
 syn region descTagRegion start=/^\[\(L\|LICENSE\)\]/ end=/$/ contains=descTag,descLicense
 
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" Define the default highlighting.
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_desc_syntax_inits")
+  if version < 508
+    let did_desc_syntax_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link descFlag		Identifier
-hi def link descLicense		Identifier
-hi def link descCategory		Identifier
+  HiLink descFlag		Identifier
+  HiLink descLicense		Identifier
+  HiLink descCategory		Identifier
 
-hi def link descTag		Type
-hi def link descUrl		Underlined
-hi def link descEmail		Underlined
+  HiLink descTag		Type
+  HiLink descUrl		Underlined
+  HiLink descEmail		Underlined
 
-" priority tag colors
-hi def link descInstallX		Boolean
-hi def link descInstallO		Type
-hi def link descDash		Operator
-hi def link descDigit		Number
-hi def link descCompilePriority	Number
+  " priority tag colors
+  HiLink descInstallX		Boolean
+  HiLink descInstallO		Type
+  HiLink descDash		Operator
+  HiLink descDigit		Number
+  HiLink descCompilePriority	Number
 
-" download tag colors
-hi def link descSum		Number
-hi def link descTarball		Underlined
+  " download tag colors
+  HiLink descSum		Number
+  HiLink descTarball		Underlined
 
-" tag region colors
-hi def link descText		Comment
+  " tag region colors
+  HiLink descText		Comment
 
+  delcommand HiLink
+endif
 
 let b:current_syntax = "desc"

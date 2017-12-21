@@ -5,8 +5,11 @@
 " URL: http://ronware.org/wiki/vim/mmp
 " Filetypes:	*.mmp
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -31,7 +34,8 @@ syn match   mmpNumber	"0x\x\+"
 
 
 " Define the default highlighting.
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
 if !exists("did_mmp_syntax_inits")
   let did_mmp_syntax_inits=1
 

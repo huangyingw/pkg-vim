@@ -8,8 +8,11 @@
 
 
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -176,27 +179,37 @@ syn match  tssclScientific  "-\=\<[0-9]*\.[0-9]*E[-+]\=[0-9]\+\>"
 
 
 " Define the default highlighting
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_tsscl_syntax_inits")
+  if version < 508
+    let did_tsscl_syntax_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link tssclCommand		Statement
-hi def link tssclKeyword		Special
-hi def link tssclEnd		Macro
-hi def link tssclUnits		Special
+  HiLink tssclCommand		Statement
+  HiLink tssclKeyword		Special
+  HiLink tssclEnd		Macro
+  HiLink tssclUnits		Special
 
-hi def link tssclComment		Comment
-hi def link tssclDirective		Statement
-hi def link tssclConditional	Conditional
-hi def link tssclContChar		Macro
-hi def link tssclQualifier		Typedef
-hi def link tssclSymbol		Identifier
-hi def link tssclSymbol2		Symbol
-hi def link tssclString		String
-hi def link tssclOper		Operator
+  HiLink tssclComment		Comment
+  HiLink tssclDirective		Statement
+  HiLink tssclConditional	Conditional
+  HiLink tssclContChar		Macro
+  HiLink tssclQualifier		Typedef
+  HiLink tssclSymbol		Identifier
+  HiLink tssclSymbol2		Symbol
+  HiLink tssclString		String
+  HiLink tssclOper		Operator
 
-hi def link tssclInteger		Number
-hi def link tssclFloat		Number
-hi def link tssclScientific	Number
+  HiLink tssclInteger		Number
+  HiLink tssclFloat		Number
+  HiLink tssclScientific	Number
 
+  delcommand HiLink
+endif
 
 
 let b:current_syntax = "tsscl"

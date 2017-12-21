@@ -1,7 +1,7 @@
 " Vim indent file
 " Language:	Sass
 " Maintainer:	Tim Pope <vimNOSPAM@tpope.org>
-" Last Change:	2017 Jun 13
+" Last Change:	2013 May 30
 
 if exists("b:did_indent")
   finish
@@ -29,7 +29,9 @@ function! GetSassIndent()
   let indent = indent(lnum)
   let cindent = indent(v:lnum)
   if line !~ s:property && line !~ s:extend && cline =~ s:property
-    return indent + shiftwidth()
+    return indent + &sw
+  "elseif line =~ s:property && cline !~ s:property
+    "return indent - &sw
   else
     return -1
   endif

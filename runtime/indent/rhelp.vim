@@ -82,7 +82,7 @@ function GetRHelpIndent()
   let closeb = strlen(line2) - strlen(line3)
   let bb = openb - closeb
 
-  let ind = indent(lnum) + (bb * shiftwidth())
+  let ind = indent(lnum) + (bb * &sw)
 
   if line =~ '^\s*}\s*$'
     let ind = indent(lnum)

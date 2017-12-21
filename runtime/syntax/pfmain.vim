@@ -7,12 +7,17 @@
 " URL:		http://cern.ch/fuji/vim/syntax/pfmain.vim
 " Comment:	Based on Postfix 2.12/3.0 postconf.5.html.
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+if version < 600
+	syntax clear
+elseif exists("b:current_syntax")
 	finish
 endif
 
-setlocal iskeyword=@,48-57,_,-
+if version >= 600
+	setlocal iskeyword=@,48-57,_,-
+else
+	set iskeyword=@,48-57,_,-
+endif
 
 syntax case match
 syntax sync minlines=1
@@ -1811,24 +1816,33 @@ syntax match pfmainSpecial	"\<smtpd\>"
 syntax match pfmainSpecial	"\<trace\>"
 syntax match pfmainSpecial	"\<verify\>"
 
+if version >= 508 || !exists("pfmain_syntax_init")
+	if version < 508
+		let pfmain_syntax_init = 1
+		command -nargs=+ HiLink hi link <args>
+	else
+		command -nargs=+ HiLink hi def link <args>
+	endif
 
-hi def link pfmainConf	Statement
-hi def link pfmainRef	PreProc
-hi def link pfmainWord	identifier
+	HiLink pfmainConf	Statement
+	HiLink pfmainRef	PreProc
+	HiLink pfmainWord	identifier
 
-hi def link pfmainDict	Type
-hi def link pfmainQueueDir	Constant
-hi def link pfmainTransport	Constant
-hi def link pfmainLock	Constant
-hi def link pfmainAnswer	Constant
+	HiLink pfmainDict	Type
+	HiLink pfmainQueueDir	Constant
+	HiLink pfmainTransport	Constant
+	HiLink pfmainLock	Constant
+	HiLink pfmainAnswer	Constant
 
-hi def link pfmainComment	Comment
-hi def link pfmainNumber	Number
-hi def link pfmainTime	Number
-hi def link pfmainIP		Number
-hi def link pfmainVariable	Error
-hi def link pfmainSpecial	Special
+	HiLink pfmainComment	Comment
+	HiLink pfmainNumber	Number
+	HiLink pfmainTime	Number
+	HiLink pfmainIP		Number
+	HiLink pfmainVariable	Error
+	HiLink pfmainSpecial	Special
 
+	delcommand HiLink
+endif
 
 let b:current_syntax = "pfmain"
 

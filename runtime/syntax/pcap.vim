@@ -4,13 +4,20 @@
 "		Modified by Bram
 " Last Change:	2003 May 11
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
 "define keywords
-setlocal isk=@,46-57,_,-,#,=,192-255
+if version < 600
+  set isk=@,46-57,_,-,#,=,192-255
+else
+  setlocal isk=@,46-57,_,-,#,=,192-255
+endif
 
 "first all the bad guys
 syn match pcapBad '^.\+$'	       "define any line as bad
@@ -36,12 +43,22 @@ syn sync minlines=50
 
 
 " Define the default highlighting.
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_pcap_syntax_inits")
+  if version < 508
+    let did_pcap_syntax_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link pcapBad WarningMsg
-hi def link pcapBadword WarningMsg
-hi def link pcapComment Comment
+  HiLink pcapBad WarningMsg
+  HiLink pcapBadword WarningMsg
+  HiLink pcapComment Comment
 
+  delcommand HiLink
+endif
 
 let b:current_syntax = "pcap"
 

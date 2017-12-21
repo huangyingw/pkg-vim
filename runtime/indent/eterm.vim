@@ -1,7 +1,7 @@
 " Vim indent file
-" Language:             Eterm configuration file
-" Previous Maintainer:  Nikolai Weibull <now@bitwi.se>
-" Latest Revision:      2006-12-20
+" Language:         Eterm configuration file
+" Maintainer:       Nikolai Weibull <now@bitwi.se>
+" Latest Revision:  2006-12-20
 
 if exists("b:did_indent")
   finish
@@ -25,11 +25,11 @@ function GetEtermIndent()
   let ind = indent(lnum)
 
   if getline(lnum) =~ '^\s*begin\>'
-    let ind = ind + shiftwidth()
+    let ind = ind + &sw
   endif
 
   if getline(v:lnum) =~ '^\s*end\>'
-    let ind = ind - shiftwidth()
+    let ind = ind - &sw
   endif
 
   return ind

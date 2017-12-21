@@ -3,7 +3,7 @@
 " Maintainer: Jakson Aquino <jalvesaq@gmail.com>
 " Former Maintainer: Johannes Ranke <jranke@uni-bremen.de>
 " Homepage: https://github.com/jalvesaq/R-Vim-runtime
-" Last Change: Tue Jun 28, 2016  08:53AM
+" Last Change: Sat Feb 06, 2016  11:34AM
 " Remarks:     - Includes R syntax highlighting in the appropriate
 "                sections if an r.vim file is in the same directory or in the
 "                default debian location.
@@ -17,6 +17,7 @@ if exists("b:current_syntax")
 endif 
 
 scriptencoding utf-8
+setlocal iskeyword=@,48-57,_,.
 
 syn case match
 

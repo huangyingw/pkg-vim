@@ -10,13 +10,20 @@
 
 " Thanks to Rik, Erik Nomitch, Adam Obeng and Graeme Cross for helpful feedback!
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
 " Read the C syntax to start with
-runtime! syntax/cpp.vim
+if version < 600
+  so <sfile>:p:h/cpp.vim
+else
+  runtime! syntax/cpp.vim
+endif
 
 syn keyword arduinoConstant HIGH LOW INPUT OUTPUT
 syn keyword arduinoConstant DEC BIN HEX OCT BYTE

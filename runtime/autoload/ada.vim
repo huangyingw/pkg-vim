@@ -2,13 +2,12 @@
 "  Description: Perform Ada specific completion & tagging.
 "     Language: Ada (2005)
 "	   $Id: ada.vim 887 2008-07-08 14:29:01Z krischik $
-"   Maintainer: Mathias Brousset <mathiasb17@gmail.com>
-"		Martin Krischik <krischik@users.sourceforge.net>
+"   Maintainer: Martin Krischik <krischik@users.sourceforge.net>
 "		Taylor Venable <taylor@metasyntax.net>
 "		Neil Bird <neil@fnxweb.com>
 "		Ned Okie <nokie@radford.edu>
 "      $Author: krischik $
-"	 $Date: 2017-01-31 20:20:05 +0200 (Mon, 01 Jan 2017) $
+"	 $Date: 2008-07-08 16:29:01 +0200 (Di, 08 Jul 2008) $
 "      Version: 4.6
 "    $Revision: 887 $
 "     $HeadURL: https://gnuada.svn.sourceforge.net/svnroot/gnuada/trunk/tools/vim/autoload/ada.vim $
@@ -24,7 +23,6 @@
 "	        09.05.2007 MK Session just won't work no matter how much
 "			      tweaking is done
 "		19.09.2007 NO still some mapleader problems
-"		31.01.2017 MB fix more mapleader problems
 "    Help Page: ft-ada-functions
 "------------------------------------------------------------------------------
 
@@ -449,7 +447,7 @@ function ada#Switch_Session (New_Session)
 
       if a:New_Session != v:this_session
 	 "
-	 "  We actually got a new session - otherwise there
+	 "  We actualy got a new session - otherwise there
 	 "  is nothing to do.
 	 "
 	 if strlen (v:this_session) > 0
@@ -587,11 +585,11 @@ function ada#Map_Menu (Text, Keys, Command)
 	\ " :"	  . a:Command . "<CR>"
       execute
 	\ "nnoremap <buffer>" .
-	\ " <Leader>a" . a:Keys .
+	\ escape(l:leader . "a" . a:Keys , '\') .
 	\" :" . a:Command
       execute
 	\ "inoremap <buffer>" .
-	\ " <Leader>a" . a:Keys .
+	\ escape(l:leader . "a" . a:Keys , '\') .
 	\" <C-O>:" . a:Command
    endif
    return

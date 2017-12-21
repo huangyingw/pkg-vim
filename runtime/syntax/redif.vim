@@ -7,8 +7,10 @@
 " File Extension:    rdf
 " Note:              The ReDIF format is used by RePEc.
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" To be compatible with Vim 5.8 use:
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 

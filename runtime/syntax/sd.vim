@@ -5,8 +5,9 @@
 " URL: http://netstudent.polito.it/vim_syntax/
 " Last Change: 2012 Feb 03 by Thilo Six
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+if version < 600
+        syntax clear
+elseif exists("b:current_syntax")
         finish
 endif
 
@@ -50,20 +51,29 @@ syn keyword sdSpecial TRUE FALSE NULL
 syn keyword sdDelimiter STREAM STREAM_END
 syn match sdError /^search .\{257,}/
 
+if version >= 508 || !exists("did_config_syntax_inits")
+        if version < 508
+                let did_config_syntax_inits = 1
+                command! -nargs=+ HiLink hi link <args>
+        else
+                command! -nargs=+ HiLink hi def link <args>
+        endif
 
-hi def link sdIP Number
-hi def link sdHostname Type
-hi def link sdEncoding Identifier
-hi def link sdCoding Identifier
-hi def link sdSource Identifier
-hi def link sdComment Comment
-hi def link sdIPError Error
-hi def link sdError Error
-hi def link sdStatement Statement
-hi def link sdIPSpecial Special
-hi def link sdSpecial Special
-hi def link sdDelimiter Delimiter
+        HiLink sdIP Number
+		  HiLink sdHostname Type
+        HiLink sdEncoding Identifier
+        HiLink sdCoding Identifier
+        HiLink sdSource Identifier
+        HiLink sdComment Comment
+        HiLink sdIPError Error
+        HiLink sdError Error
+        HiLink sdStatement Statement
+        HiLink sdIPSpecial Special
+        HiLink sdSpecial Special
+		  HiLink sdDelimiter Delimiter
 
+        delcommand HiLink
+endif
 
 let b:current_syntax = "sd"
 

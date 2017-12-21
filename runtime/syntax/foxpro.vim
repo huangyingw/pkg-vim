@@ -13,8 +13,9 @@
 " 		corrected highlighting of comments at end of line (&&)
 " 
 " 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+if version < 600
+    syntax clear
+elseif exists("b:current_syntax")
     finish
 endif
 
@@ -690,27 +691,37 @@ syn match foxproParenErr ")"
 syn sync minlines=1 maxlines=3
 
 " Define the default highlighting.
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_foxpro_syn_inits")
+    if version < 508
+	let did_foxpro_syn_inits = 1
+	command -nargs=+ HiLink hi link <args>
+    else
+	command -nargs=+ HiLink hi def link <args>
+    endif
 
-hi def link foxproSpecial  Special
-hi def link foxproAtSymbol Special
-hi def link foxproAtCmd    Statement
-hi def link foxproPreProc  PreProc
-hi def link foxproFunc     Identifier
-hi def link foxproCmd      Statement
-hi def link foxproEnBlk    Type
-hi def link foxproSysVar   String
-hi def link foxproString   String
-hi def link foxproConst    Constant
-hi def link foxproNumber   Number
-hi def link foxproFloat    Float
-hi def link foxproComment  Comment
-hi def link foxproParenErr Error
-hi def link foxproCBConst  PreProc
-hi def link foxproCBField  Special
-hi def link foxproCBVar    Identifier
-hi def link foxproCBWin    Special
-hi def link foxproCBObject Identifier
+    HiLink foxproSpecial  Special
+    HiLink foxproAtSymbol Special
+    HiLink foxproAtCmd    Statement
+    HiLink foxproPreProc  PreProc
+    HiLink foxproFunc     Identifier
+    HiLink foxproCmd      Statement
+    HiLink foxproEnBlk    Type
+    HiLink foxproSysVar   String
+    HiLink foxproString   String
+    HiLink foxproConst    Constant
+    HiLink foxproNumber   Number
+    HiLink foxproFloat    Float
+    HiLink foxproComment  Comment
+    HiLink foxproParenErr Error
+    HiLink foxproCBConst  PreProc
+    HiLink foxproCBField  Special
+    HiLink foxproCBVar    Identifier
+    HiLink foxproCBWin    Special
+    HiLink foxproCBObject Identifier
 
+    delcommand HiLink
+endif
 
 let b:current_syntax = "foxpro"

@@ -1,4 +1,4 @@
-*netbeans.txt*  For Vim version 8.0.  Last change: 2016 Jul 15
+*netbeans.txt*  For Vim version 7.4.  Last change: 2016 Feb 18
 
 
 		  VIM REFERENCE MANUAL    by Gordon Prieur et al.
@@ -59,8 +59,6 @@ Current projects using the NetBeans protocol of Vim are:
 
 Check the specific project pages to see how to use Vim with these projects.
 
-An alternative is to use a channel, see |channel|.
-
 In the rest of this help page, we will use the term "Vim Controller" to
 describe the program controlling Vim through the NetBeans socket interface.
 
@@ -120,7 +118,7 @@ In case you do not want the NetBeans interface you can disable it by
 uncommenting a line with "--disable-netbeans" in the Makefile.
 
 Currently the NetBeans interface is supported by Vim running in a terminal and
-by gvim when it is run with one of the following GUIs: GTK, GNOME, Windows,
+by GVim when it is run with one of the following GUIs: GTK, GNOME, Windows,
 Athena and Motif.
 
 If Motif support is required the user must supply XPM libraries.  See
@@ -829,7 +827,7 @@ REJECT		Not used.
 These errors occur when a message violates the protocol:
 *E627* *E628* *E629* *E632* *E633* *E634* *E635* *E636*
 *E637* *E638* *E639* *E640* *E641* *E642* *E643* *E644* *E645* *E646*
-*E647* *E648* *E649* *E650* *E651* *E652*
+*E647* *E648* *E649* *E650* *E651* *E652* *E653* *E654*
 
 
 ==============================================================================
@@ -996,7 +994,7 @@ to "Vim".  In the Expert tab make sure the "Vim Command" is correct.
 You should be careful if you change the "Vim Command".  There are command
 line options there which must be there for the connection to be properly
 set up.  You can change the command name but that's about it.  If your gvim
-can be found by your $PATH then the Vim Command can start with "gvim".  If
+can be found by your $PATH then the VIM Command can start with "gvim".  If
 you don't want gvim searched from your $PATH then hard code in the full
 Unix path name.  At this point you should get a gvim for any source file
 you open in NetBeans.

@@ -20,8 +20,9 @@
 " For vim version 5.x: Clear all syntax items
 " For vim version 6.x: Quit when a syntax file was already loaded
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -500,44 +501,54 @@ syn keyword gnuplotStatement	shell splot spstats stats system test undefine
 syn keyword gnuplotStatement	unset update
 
 " ---- Define the default highlighting ---- "
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_gnuplot_syntax_inits")
+  if version < 508
+    let did_gnuplot_syntax_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-" ---- Comments ---- "
-hi def link gnuplotComment		Comment
+  " ---- Comments ---- "
+  HiLink gnuplotComment		Comment
 
-" ---- Constants ---- "
-hi def link gnuplotString		String
-hi def link gnuplotNumber		Number
-hi def link gnuplotFloat		Float
+  " ---- Constants ---- "
+  HiLink gnuplotString		String
+  HiLink gnuplotNumber		Number
+  HiLink gnuplotFloat		Float
 
-" ---- Identifiers ---- "
-hi def link gnuplotIdentifier	Identifier
+  " ---- Identifiers ---- "
+  HiLink gnuplotIdentifier	Identifier
 
-" ---- Statements ---- "
-hi def link gnuplotConditional	Conditional
-hi def link gnuplotRepeat		Repeat
-hi def link gnuplotKeyword		Keyword
-hi def link gnuplotOperator	Operator
+  " ---- Statements ---- "
+  HiLink gnuplotConditional	Conditional
+  HiLink gnuplotRepeat		Repeat
+  HiLink gnuplotKeyword		Keyword
+  HiLink gnuplotOperator	Operator
 
-" ---- PreProcs ---- "
-hi def link gnuplotMacro		Macro
+  " ---- PreProcs ---- "
+  HiLink gnuplotMacro		Macro
 
-" ---- Types ---- "
-hi def link gnuplotStatement	Type
-hi def link gnuplotFunc		Identifier
+  " ---- Types ---- "
+  HiLink gnuplotStatement	Type
+  HiLink gnuplotFunc		Identifier
 
-" ---- Specials ---- "
-hi def link gnuplotSpecial		Special
-hi def link gnuplotUnit		Special
-hi def link gnuplotExternal	Special
+  " ---- Specials ---- "
+  HiLink gnuplotSpecial		Special
+  HiLink gnuplotUnit		Special
+  HiLink gnuplotExternal	Special
 
-" ---- Errors ---- "
-hi def link gnuplotError		Error
-hi def link gnuplotOctalError	Error
+  " ---- Errors ---- "
+  HiLink gnuplotError		Error
+  HiLink gnuplotOctalError	Error
 
-" ---- Todos ---- "
-hi def link gnuplotTodo		Todo
+  " ---- Todos ---- "
+  HiLink gnuplotTodo		Todo
 
+  delcommand HiLink
+endif
 
 let b:current_syntax = "gnuplot"
 

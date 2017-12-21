@@ -1,7 +1,7 @@
-" LogiPat: Boolean logical pattern matcher
+" LogiPat:
 "   Author:  Charles E. Campbell
-"   Date:    Apr 04, 2016
-"   Version: 4
+"   Date:    Mar 13, 2013
+"   Version: 3
 "   Purpose: to do Boolean-logic based regular expression pattern matching
 " Copyright:    Copyright (C) 1999-2011 Charles E. Campbell {{{1
 "               Permission is hereby granted to use and distribute this code,
@@ -36,22 +36,21 @@
 
 " ---------------------------------------------------------------------
 " Load Once: {{{1
-if &cp || exists("loaded_logiPat")
+if &cp || exists("loaded_logipat")
  finish
 endif
-let g:loaded_logiPat = "v4"
+let g:loaded_LogiPat = "v3"
 let s:keepcpo        = &cpo
 set cpo&vim
 "DechoRemOn
 
 " ---------------------------------------------------------------------
 " Public Interface: {{{1
-com!     -nargs=* LogiPat		call   LogiPat(<q-args>,1)
-sil! com -nargs=* LP			call   LogiPat(<q-args>,1)
-sil! com -nargs=* LPR			call   LogiPat(<q-args>,1,"r")
-com!     -nargs=+ LPE			echomsg LogiPat(<q-args>)
-com!     -nargs=+ LogiPatFlags	let  s:LogiPatFlags="<args>"
-sil! com -nargs=+ LPF			let  s:LogiPatFlags="<args>"
+com!        -nargs=* LogiPat		call   LogiPat(<q-args>,1)
+silent! com -nargs=* LP				call   LogiPat(<q-args>,1)
+com!        -nargs=+ ELP			echomsg   LogiPat(<q-args>)
+com!        -nargs=+ LogiPatFlags	let  s:LogiPatFlags="<args>"
+silent! com -nargs=+ LPF			let  s:LogiPatFlags="<args>"
 
 " =====================================================================
 " Functions: {{{1
@@ -66,9 +65,6 @@ fun! LogiPat(pat,...)
    let dosearch= a:1
   else
    let dosearch= 0
-  endif
-  if a:0 >= 3
-   let s:LogiPatFlags= a:3
   endif
 
   let s:npatstack = 0
@@ -130,7 +126,7 @@ fun! LogiPat(pat,...)
 
   " perform the indicated search
   if dosearch
-   if exists("s:LogiPatFlags") && s:LogiPatFlags != ""
+   if exists("s:LogiPatFlags")
 "  call Decho("search(result<".result."> LogiPatFlags<".s:LogiPatFlags.">)")
     call search(result,s:LogiPatFlags)
    else

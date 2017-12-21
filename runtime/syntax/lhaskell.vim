@@ -36,8 +36,11 @@
 "
 
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+" For version 5.x: Clear all syntax items
+" For version 6.x: Quit when a syntax file was already loaded
+if version < 600
+  syntax clear
+elseif exists("b:current_syntax")
   finish
 endif
 
@@ -81,10 +84,15 @@ endif
 
 " If user wants us to highlight TeX syntax or guess thinks it's TeX, read it.
 if b:lhs_markup == "tex"
-    runtime! syntax/tex.vim
-    unlet b:current_syntax
-    " Tex.vim removes "_" from 'iskeyword', but we need it for Haskell.
-    setlocal isk+=_
+    if version < 600
+	source <sfile>:p:h/tex.vim
+	set isk+=_
+    else
+	runtime! syntax/tex.vim
+	unlet b:current_syntax
+	" Tex.vim removes "_" from 'iskeyword', but we need it for Haskell.
+	setlocal isk+=_
+    endif
     syntax cluster lhsTeXContainer contains=tex.*Zone,texAbstract
 else
     syntax cluster lhsTeXContainer contains=.*
@@ -92,7 +100,11 @@ endif
 
 " Literate Haskell is Haskell in between text, so at least read Haskell
 " highlighting
-syntax include @haskellTop syntax/haskell.vim
+if version < 600
+    syntax include @haskellTop <sfile>:p:h/haskell.vim
+else
+    syntax include @haskellTop syntax/haskell.vim
+endif
 
 syntax region lhsHaskellBirdTrack start="^>" end="\%(^[^>]\)\@=" contains=@haskellTop,lhsBirdTrack containedin=@lhsTeXContainer
 syntax region lhsHaskellBeginEndBlock start="^\\begin{code}\s*$" matchgroup=NONE end="\%(^\\end{code}.*$\)\@=" contains=@haskellTop,beginCodeBegin containedin=@lhsTeXContainer
@@ -103,13 +115,23 @@ syntax match beginCodeBegin "^\\begin" nextgroup=beginCodeCode contained
 syntax region beginCodeCode  matchgroup=texDelimiter start="{" end="}"
 
 " Define the default highlighting.
-" Only when an item doesn't have highlighting yet
+" For version 5.7 and earlier: only when not done already
+" For version 5.8 and later: only when an item doesn't have highlighting yet
+if version >= 508 || !exists("did_tex_syntax_inits")
+  if version < 508
+    let did_tex_syntax_inits = 1
+    command -nargs=+ HiLink hi link <args>
+  else
+    command -nargs=+ HiLink hi def link <args>
+  endif
 
-hi def link lhsBirdTrack Comment
+  HiLink lhsBirdTrack Comment
 
-hi def link beginCodeBegin	      texCmdName
-hi def link beginCodeCode	      texSection
+  HiLink beginCodeBegin	      texCmdName
+  HiLink beginCodeCode	      texSection
 
+  delcommand HiLink
+endif
 
 " Restore cursor to original position, as it may have been disturbed
 " by the searches in our guessing code

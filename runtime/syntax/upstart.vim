@@ -10,8 +10,9 @@
 " It is inspired by the initng syntax file and includes sh.vim to do the
 " highlighting of script blocks.
 
-" quit when a syntax file was already loaded
-if exists("b:current_syntax")
+if version < 600
+	syntax clear
+elseif exists("b:current_syntax")
 	finish
 endif
 
@@ -35,7 +36,7 @@ syn cluster upstartShellCluster contains=@Shell
 " one argument
 syn keyword upstartStatement description author version instance expect
 syn keyword upstartStatement pid kill normal console env exit export
-syn keyword upstartStatement umask nice oom chroot chdir exec
+syn keyword upstartStatement umask nice oom chroot chdir exec setuid setgid
 
 " two arguments
 syn keyword upstartStatement limit

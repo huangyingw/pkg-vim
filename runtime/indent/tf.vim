@@ -1,8 +1,8 @@
 " Vim indent file
 " Language:     tf (TinyFugue)
 " Maintainer:   Christian J. Robinson <heptite@gmail.com>
-" URL:          http://www.vim.org/scripts/script.php?script_id=174
-" Last Change:  2017 Feb 25 
+" URL:          http://christianrobinson.name/vim/indent/tf.vim
+" Last Change:  2002 May 29
 
 " Only load this indent file when no other was loaded.
 if exists("b:did_indent")
@@ -38,14 +38,14 @@ function GetTFIndent()
 	endif
 
 	if line =~ '\(/def.*\\\|/for.*\(%;\s*\)\@\<!\\\)$'
-		let ind = ind + shiftwidth()
+		let ind = ind + &sw
 	elseif line =~ '\(/if\|/else\|/then\)'
 		if line !~ '/endif'
-			let ind = ind + shiftwidth()
+			let ind = ind + &sw
 		endif
 	elseif line =~ '/while'
 		if line !~ '/done'
-			let ind = ind + shiftwidth()
+			let ind = ind + &sw
 		endif
 	endif
 
@@ -53,11 +53,11 @@ function GetTFIndent()
 
 	if line =~ '\(/else\|/endif\|/then\)'
 		if line !~ '/if'
-			let ind = ind - shiftwidth()
+			let ind = ind - &sw
 		endif
 	elseif line =~ '/done'
 		if line !~ '/while'
-			let ind = ind - shiftwidth()
+			let ind = ind - &sw
 		endif
 	endif
 

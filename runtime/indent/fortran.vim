@@ -1,12 +1,11 @@
 " Vim indent file
 " Language:	Fortran 2008 (and older: Fortran 2003, 95, 90, and 77)
-" Version:	47
-" Last Change:	2016 Oct. 29
+" Version:	0.44
+" Last Change:	2016 Jan. 26
 " Maintainer:	Ajit J. Thakkar <ajit@unb.ca>; <http://www2.unb.ca/~ajit/>
 " Usage:	For instructions, do :help fortran-indent from Vim
 " Credits:
-"  Useful suggestions were made, in chronological order, by:
-"  Albert Oliver Serra, Takuya Fujiwara and Philipp Edelmann.
+"  Useful suggestions were made by: Albert Oliver Serra and Takuya Fujiwara.
 
 " Only load this indent file when no other was loaded.
 if exists("b:did_indent")
@@ -100,9 +99,9 @@ function FortranGetIndent(lnum)
     endif
   endif
 
-  "Add a shiftwidth to statements following if, else, else if, case, class,
+  "Add a shiftwidth to statements following if, else, else if, case,
   "where, else where, forall, type, interface and associate statements
-  if prevstat =~? '^\s*\(case\|class\|else\|else\s*if\|else\s*where\)\>'
+  if prevstat =~? '^\s*\(case\|else\|else\s*if\|else\s*where\)\>'
 	\ ||prevstat=~? '^\s*\(type\|interface\|associate\|enum\)\>'
 	\ ||prevstat=~?'^\s*\(\d\+\s\)\=\s*\(\a\w*\s*:\)\=\s*\(forall\|where\|block\)\>'
 	\ ||prevstat=~? '^\s*\(\d\+\s\)\=\s*\(\a\w*\s*:\)\=\s*if\>'
@@ -122,8 +121,7 @@ function FortranGetIndent(lnum)
     let prefix='\(\(pure\|impure\|elemental\|recursive\)\s\+\)\{,2}'
     let type='\(\(integer\|real\|double\s\+precision\|complex\|logical'
           \.'\|character\|type\|class\)\s*\S*\s\+\)\='
-    if prevstat =~? '^\s*\(contains\|submodule\|program\)\>'
-            \ ||prevstat =~? '^\s*'.'module\>\(\s*\procedure\)\@!'
+    if prevstat =~? '^\s*\(module\|contains\|program\)\>'
             \ ||prevstat =~? '^\s*'.prefix.'subroutine\>'
             \ ||prevstat =~? '^\s*'.prefix.type.'function\>'
             \ ||prevstat =~? '^\s*'.type.prefix.'function\>'
@@ -131,16 +129,16 @@ function FortranGetIndent(lnum)
     endif
     if getline(v:lnum) =~? '^\s*contains\>'
           \ ||getline(v:lnum)=~? '^\s*end\s*'
-          \ .'\(function\|subroutine\|module\|submodule\|program\)\>'
+          \ .'\(function\|subroutine\|module\|program\)\>'
       let ind = ind - shiftwidth()
     endif
   endif
 
-  "Subtract a shiftwidth from else, else if, elsewhere, case, class, end if,
+  "Subtract a shiftwidth from else, else if, elsewhere, case, end if,
   " end where, end select, end forall, end interface, end associate,
-  " end enum, end type, end block and end type statements
+  " end enum, and end type statements
   if getline(v:lnum) =~? '^\s*\(\d\+\s\)\=\s*'
-        \. '\(else\|else\s*if\|else\s*where\|case\|class\|'
+        \. '\(else\|else\s*if\|else\s*where\|case\|'
         \. 'end\s*\(if\|where\|select\|interface\|'
         \. 'type\|forall\|associate\|enum\|block\)\)\>'
     let ind = ind - shiftwidth()
@@ -153,6 +151,9 @@ function FortranGetIndent(lnum)
   "First continuation line
   if prevstat =~ '&\s*$' && prev2stat !~ '&\s*$'
     let ind = ind + shiftwidth()
+  endif
+  if prevstat =~ '&\s*$' && prevstat =~ '\<else\s*if\>'
+    let ind = ind - shiftwidth()
   endif
   "Line after last continuation line
   if prevstat !~ '&\s*$' && prev2stat =~ '&\s*$' && prevstat !~? '\<then\>'

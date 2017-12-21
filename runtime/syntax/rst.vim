@@ -2,8 +2,7 @@
 " Language: reStructuredText documentation format
 " Maintainer: Marshall Ward <marshall.ward@gmail.com>
 " Previous Maintainer: Nikolai Weibull <now@bitwi.se>
-" Website: https://github.com/marshallward/vim-restructuredtext
-" Latest Revision: 2016-08-18
+" Latest Revision: 2016-01-05
 
 if exists("b:current_syntax")
   finish
@@ -90,7 +89,7 @@ function! s:DefineOneInlineMarkup(name, start, middle, end, char_left, char_righ
         \ ' start=+' . a:char_left . '\zs' . a:start .
         \ '\ze[^[:space:]' . a:char_right . a:start[strlen(a:start) - 1] . ']+' .
         \ a:middle .
-        \ ' end=+\S' . a:end . '\ze\%($\|\s\|[''"’)\]}>/:.,;!?\\-]\)+'
+        \ ' end=+\S' . a:end . '\ze\%($\|\s\|[''")\]}>/:.,;!?\\-]\)+'
 endfunction
 
 function! s:DefineInlineMarkup(name, start, middle, end)
@@ -104,8 +103,6 @@ function! s:DefineInlineMarkup(name, start, middle, end)
   call s:DefineOneInlineMarkup(a:name, a:start, middle, a:end, '\[', '\]')
   call s:DefineOneInlineMarkup(a:name, a:start, middle, a:end, '{', '}')
   call s:DefineOneInlineMarkup(a:name, a:start, middle, a:end, '<', '>')
-  call s:DefineOneInlineMarkup(a:name, a:start, middle, a:end, '’', '’')
-  " TODO: Additional Unicode Pd, Po, Pi, Pf, Ps characters
 
   call s:DefineOneInlineMarkup(a:name, a:start, middle, a:end, '\%(^\|\s\|[/:]\)', '')
 
@@ -140,7 +137,7 @@ syn match   rstStandaloneHyperlink  contains=@NoSpell
       \ "\<\%(\%(\%(https\=\|file\|ftp\|gopher\)://\|\%(mailto\|news\):\)[^[:space:]'\"<>]\+\|www[[:alnum:]_-]*\.[[:alnum:]_-]\+\.[^[:space:]'\"<>]\+\)[[:alnum:]/]"
 
 syn region rstCodeBlock contained matchgroup=rstDirective
-      \ start=+\%(sourcecode\|code\%(-block\)\=\)::\s\+\w*\_s*\n\ze\z(\s\+\)+
+      \ start=+\%(sourcecode\|code\%(-block\)\=\)::\_s*\n\ze\z(\s\+\)+
       \ skip=+^$+
       \ end=+^\z1\@!+
       \ contains=@NoSpell
@@ -156,11 +153,10 @@ for code in g:rst_syntax_code_list
     " guard against setting 'isk' option which might cause problems (issue #108)
     let prior_isk = &l:iskeyword
     exe 'syn include @rst'.code.' syntax/'.code.'.vim'
-    exe 'syn region rstDirective'.code.' matchgroup=rstDirective fold'
-                \.' start=#\%(sourcecode\|code\%(-block\)\=\)::\s\+'.code.'\_s*\n\ze\z(\s\+\)#'
-                \.' skip=#^$#'
-                \.' end=#^\z1\@!#'
-                \.' contains=@NoSpell,@rst'.code
+    exe 'syn region rstDirective'.code.' matchgroup=rstDirective fold '
+                \.'start=#\%(sourcecode\|code\%(-block\)\=\)::\s\+'.code.'\_s*\n\ze\z(\s\+\)# '
+                \.'skip=#^$# '
+                \.'end=#^\z1\@!# contains=@NoSpell,@rst'.code
     exe 'syn cluster rstDirectives add=rstDirective'.code
     " reset 'isk' setting, if it has been changed
     if &l:iskeyword !=# prior_isk
@@ -189,8 +185,10 @@ hi def link rstHyperlinkTarget              String
 hi def link rstExDirective                  String
 hi def link rstSubstitutionDefinition       rstDirective
 hi def link rstDelimiter                    Delimiter
-hi def rstEmphasis ctermfg=13 term=italic cterm=italic gui=italic
-hi def rstStrongEmphasis ctermfg=1 term=bold cterm=bold gui=bold
+" TODO: I dunno...
+hi def      rstEmphasis                     term=italic cterm=italic gui=italic
+hi def link rstStrongEmphasis               Special
+"term=bold cterm=bold gui=bold
 hi def link rstInterpretedTextOrHyperlinkReference  Identifier
 hi def link rstInlineLiteral                String
 hi def link rstSubstitutionReference        PreProc

@@ -1,7 +1,7 @@
 " Vim syntax file
-" Language:             grub(8) configuration file
-" Previous Maintainer:  Nikolai Weibull <now@bitwi.se>
-" Latest Revision:      2006-04-19
+" Language:         grub(8) configuration file
+" Maintainer:       Nikolai Weibull <now@bitwi.se>
+" Latest Revision:  2006-04-19
 
 if exists("b:current_syntax")
   finish
@@ -40,7 +40,7 @@ syn keyword grubCommand       contained bootp color device dhcp hide ifconfig
                               \ displaymem embed find fstest geometry halt help
                               \ impsprobe initrd install ioprobe kernel lock
                               \ makeactive map md5crypt module modulenounzip pause
-                              \ quit reboot read root rootnoverify savedefault setup
+                              \ quiet quit reboot read root rootnoverify savedefault setup
                               \ testload testvbe uppermem vbeprobe
 
 syn keyword grubSpecial       saved
