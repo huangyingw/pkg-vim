@@ -4,10 +4,15 @@ SCRIPTPATH=$(dirname "$SCRIPT")
 cd "$SCRIPTPATH"
 
 cd src/
-./configure --with-features=huge --enable-multibyte --enable-perlinterp --enable-rubyinterp --enable-tclinterp --with-tlib=ncurses --enable-cscope --enable-pythoninterp \
+./configure \
+    --enable-cscope \
+    --enable-multibyte \
+    --enable-perlinterp \
+    --enable-pythoninterp \
+    --enable-rubyinterp \
+    --enable-tclinterp \
+    --with-features=huge \
+    --with-tlib=ncurses \
     && make \
     && make install \
-    && cd - \
-    && ~/loadrc/gitrc/gci.sh
-
-cd -
+ 
