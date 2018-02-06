@@ -15,4 +15,7 @@ cd src/
     --with-tlib=ncurses \
     && make \
     && make install \
- 
+    && cd - \
+    && ~/loadrc/gitrc/gci.sh
+
+cd -
