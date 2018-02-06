@@ -8,6 +8,7 @@ services:
             - ./.bashrc:/root/.bashrc
             - ./:/pkg-vim/
             - ./var/logs/:/var/logs/
+            - ~/.ssh/:/root/.ssh/
             - ~/loadrc/:/root/loadrc/
             - ~/loadrc/gitrc/.gitconfig:/root/.gitconfig
         command: /bin/sh -c "/pkg-vim/build.sh > /var/logs/containner.log 2>&1"
