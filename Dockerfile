@@ -16,12 +16,13 @@ RUN apt-get update && apt-get install -y \
         python3-software-properties \
         realpath \
         software-properties-common \
+        ssh \
+        rsync \
         vim-gnome \
         wget
 
 COPY ./sources.list /etc/apt/sources.list
 RUN apt-get update && apt-get build-dep -y vim-gnome
-RUN apt-get install -y rsync
 RUN apt-get source vim-gnome
 
 # Clean up APT when done.
