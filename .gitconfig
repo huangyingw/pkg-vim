@@ -1,0 +1,14 @@
+[remote "origin"]
+    url = https://anonscm.debian.org/cgit/pkg-vim/vim.git/
+    fetch = +refs/heads/*:refs/remotes/origin/*
+[remote "github"]
+    url = git@github.com:huangyingw/pkg-vim.git
+    fetch = +refs/heads/*:refs/remotes/github/*
+[remote "bitbucket"]
+    url = git@bitbucket.org:huangyingw/pkg-vim.git
+    fetch = +refs/heads/*:refs/remotes/bitbucket/*
+[push]
+    remote = github
+    remote = bitbucket
+[commit]
+	message = n
