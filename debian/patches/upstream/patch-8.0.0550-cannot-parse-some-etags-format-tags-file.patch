@@ -13,11 +13,9 @@ Signed-off-by: James McCoy <jamessan@debian.org>
  3 files changed, 48 insertions(+), 6 deletions(-)
  create mode 100644 src/testdir/test_taglist.vim
 
-diff --git a/src/tag.c b/src/tag.c
-index a80a362..80b21c1 100644
 --- a/src/tag.c
 +++ b/src/tag.c
-@@ -2335,18 +2335,19 @@ parse_line:
+@@ -2335,18 +2335,19 @@
  		}
  		else
  		{
@@ -43,9 +41,6 @@ index a80a362..80b21c1 100644
  		     * Here <mtt> is the "mtt" value plus 1 to avoid NUL.
  		     */
  		    len = (int)tag_fname_len + (int)STRLEN(lbuf) + 3;
-diff --git a/src/testdir/test_taglist.vim b/src/testdir/test_taglist.vim
-new file mode 100644
-index 0000000..7aa830b
 --- /dev/null
 +++ b/src/testdir/test_taglist.vim
 @@ -0,0 +1,39 @@
@@ -88,16 +83,14 @@ index 0000000..7aa830b
 +
 +  call delete('Xtags')
 +endfunc
-diff --git a/src/version.c b/src/version.c
-index c301a98..b10438e 100644
 --- a/src/version.c
 +++ b/src/version.c
-@@ -771,6 +771,8 @@ static char *(features[]) =
+@@ -771,6 +771,8 @@
  static int included_patches[] =
  {   /* Add new patch number below this line */
  /**/
 +    550,
 +/**/
-     378,
+     422,
  /**/
-     377,
+     378,

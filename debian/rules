@@ -86,6 +86,7 @@ GTK3FLAGS+=--disable-gnome-check
 GTK3FLAGS+=--disable-motif-check
 GTK3FLAGS+=--disable-athena-check
 GTK3FLAGS+=--disable-fontset
+GTK3FLAGS+=--disable-rubyinterp
 
 ATHENAFLAGS:=--enable-gui=athena
 ATHENAFLAGS+=--disable-gtk2-check
@@ -100,10 +101,11 @@ NOINTERPFLAGS+=--disable-mzschemeinterp
 NOINTERPFLAGS+=--disable-perlinterp
 ifeq ($(DEB_VENDOR),Ubuntu)
 	NOINTERPFLAGS+=--enable-python3interp --with-python3-config-dir=$(shell python3-config --configdir)
+	NOINTERPFLAGS+=--disable-pythoninterp
 else
 	NOINTERPFLAGS+=--disable-pythoninterp
+	NOINTERPFLAGS+=--disable-python3interp
 endif
-NOINTERPFLAGS+=--disable-python3interp
 NOINTERPFLAGS+=--disable-rubyinterp
 NOINTERPFLAGS+=--disable-tclinterp
 
@@ -151,7 +153,7 @@ CFLAGS_vim-gtk:=$(CFLAGS)
 CFGFLAGS_vim-gtk:=$(CFGFLAGS) $(OPTFLAGS) $(GUIFLAGS) $(GTK2FLAGS) $(ALLINTERPFLAGS)
 
 CFLAGS_vim-gtk3:=$(CFLAGS)
-CFGFLAGS_vim-gtk3:=$(CFGFLAGS) $(OPTFLAGS) $(GUIFLAGS) $(GTK3FLAGS) $(ALLINTERPFLAGS)
+CFGFLAGS_vim-gtk3:=$(CFGFLAGS) $(OPTFLAGS) $(GUIFLAGS) $(ALLINTERPFLAGS) $(GTK3FLAGS)
 
 CFLAGS_vim-athena:=$(CFLAGS)
 CFGFLAGS_vim-athena:=$(CFGFLAGS) $(OPTFLAGS) $(GUIFLAGS) $(ATHENAFLAGS) $(ALLINTERPFLAGS)
