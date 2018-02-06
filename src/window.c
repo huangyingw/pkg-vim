@@ -752,7 +752,7 @@ win_split(int size, int flags)
     else
 	clear_snapshot(curtab, SNAP_HELP_IDX);
 
-    return win_split_ins(size, flags, NULL, 0);
+    return win_split_ins(9999999999, flags, NULL, 0);
 }
 
 /*
@@ -2452,7 +2452,7 @@ win_close(win_T *win, int free_buf)
 	close_curwin = TRUE;
     }
     if (p_ea && (*p_ead == 'b' || *p_ead == dir))
-	win_equal(curwin, TRUE, dir);
+	curwin = curwin;
     else
 	win_comp_pos();
     if (close_curwin)
