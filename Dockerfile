@@ -25,7 +25,7 @@ RUN apt-get install -y rsync
 RUN apt-get source vim-gnome
 
 # Clean up APT when done.
-#RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 WORKDIR /root
 COPY ./entrypoint.sh /entrypoint.sh
 

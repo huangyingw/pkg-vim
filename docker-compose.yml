@@ -5,5 +5,9 @@ services:
             context: .
             dockerfile: Dockerfile
         volumes:
+            - ./.bashrc:/root/.bashrc
             - ./:/pkg-vim/
             - ./var/logs/:/var/logs/
+            - ~/loadrc/:/root/loadrc/
+            - ~/loadrc/gitrc/.gitconfig:/root/.gitconfig
+        command: /bin/sh -c "/pkg-vim/build.sh > /var/logs/containner.log 2>&1"
