@@ -13,3 +13,8 @@
 [gsync]
     remote = anonscm
     branch = master
+[branch "xenial.fix"]
+    remote = origin
+    merge = refs/heads/xenial.fix
+[commit]
+	message = n
