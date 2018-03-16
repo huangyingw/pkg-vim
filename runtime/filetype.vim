@@ -2227,7 +2227,7 @@ func! s:FTtex()
     call cursor(1,1)
     let firstNC = search('^\s*[^[:space:]%]', 'c', 1000)
     if firstNC " Check the next thousand lines for a LaTeX or ConTeXt keyword.
-      let lpat = 'documentclass\>\|usepackage\>\|begin{\|newcommand\>\|renewcommand\>'
+      let lpat = 'documentclass\>\|usepackage\>\|begin{\|newcommand\>\|renewcommand\>\|part\>\|chapter\>\|section\>\|subsection\>\|subsubsection\>\|paragraph\>\|subparagraph\>\|subsubparagraph'
       let cpat = 'start\a\+\|setup\a\+\|usemodule\|enablemode\|enableregime\|setvariables\|useencoding\|usesymbols\|stelle\a\+\|verwende\a\+\|stel\a\+\|gebruik\a\+\|usa\a\+\|imposta\a\+\|regle\a\+\|utilisemodule\>'
       let kwline = search('^\s*\\\%(' . lpat . '\)\|^\s*\\\(' . cpat . '\)',
 			      \ 'cnp', firstNC + 1000)
